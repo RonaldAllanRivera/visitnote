@@ -289,16 +289,16 @@ git commit -m "feat: jurisdiction on users, derived from the capture timezone"
 
 **Files:**
 - Create: `backend/alembic/versions/0008_note_format_varchar.py`
-- Modify: `backend/app/models/note_template.py`, `backend/app/models/user.py`, `backend/app/models/visit.py`
+- Modify: `backend/app/models/note_template.py`, `backend/app/models/user.py`, `backend/app/models/visit.py`, `backend/app/models/note.py`
 - Test: `backend/tests/test_note_templates.py` (extend)
 
 **Interfaces:**
 - Consumes: nothing from Task 1.
-- Produces: `note_templates.format`, `users.default_note_format` and `visits.note_format` are `VARCHAR(32)`; the `note_format` Postgres type no longer exists. `NoteFormat` remains the Python `StrEnum` and all three columns stay typed `Mapped[NoteFormat]`.
+- Produces: `note_templates.format`, `users.default_note_format`, `visits.note_format` and `notes.format` are `VARCHAR(32)`; the `note_format` Postgres type no longer exists. `NoteFormat` remains the Python `StrEnum` and all three columns stay typed `Mapped[NoteFormat]`.
 
 **Why:** an ENUM was the right type for a fixed pair. Formats are now a growing set, `ALTER TYPE ... ADD VALUE` cannot run inside a transaction block, and values can never be removed. There are six migrations and no production data, so this conversion is free now and expensive later.
 
-**Watch out:** three columns reference the type, not two. Dropping it while `visits.note_format` still points at it fails.
+**Watch out:** **four** columns reference the type — `note_templates.format`, `users.default_note_format`, `visits.note_format`, and `notes.format`. The last is easy to miss: [`app/models/note.py:70`](../../../backend/app/models/note.py) and `0006_pipeline_tables.py:89` both pass the type name *positionally* through a local helper, so a grep for `name="note_format"` does not find them. Dropping the type while any of the four still points at it fails.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -394,6 +394,7 @@ _COLUMNS: tuple[tuple[str, str, bool], ...] = (
     ("note_templates", "format", False),
     ("users", "default_note_format", True),
     ("visits", "note_format", False),
+    ("notes", "format", False),
 )
 
 
