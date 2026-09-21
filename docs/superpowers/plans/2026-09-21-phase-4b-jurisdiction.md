@@ -1382,7 +1382,7 @@ git commit -m "feat: PH SOAPIE and PH FDAR prompt modules"
 
 **Interfaces:**
 - Consumes: everything from Tasks 1–8.
-- Produces: `NoteFormat.FDAR = "fdar"`; two seeded rows, `(PH, soapie, 1)` and `(PH, fdar, 1)`; `default_format_for(jurisdiction: Jurisdiction, role: RoleTitle) -> NoteFormat` replacing the `DEFAULT_FORMAT_BY_ROLE` dict.
+- Produces: `NoteFormat.FDAR = "fdar"`; two seeded rows, `(PH, soapie, 1)` and `(PH, fdar, 1)`; `default_format_for(jurisdiction: Jurisdiction, role: RoleTitle) -> NoteFormat` replacing the `DEFAULT_FORMAT_BY_ROLE` dict; `AuthService.update_profile` reconciles a note format stranded by a jurisdiction change.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1441,6 +1441,53 @@ async def test_ph_fdar_has_a_repeating_focus_section(session: AsyncSession) -> N
 Append to `backend/tests/test_onboarding.py`:
 
 ```python
+async def test_switching_jurisdiction_reconciles_a_stranded_note_format(
+    client: AsyncClient,
+) -> None:
+    """Switching PH -> US must not leave the user pointing at a format that has no
+    template in their new jurisdiction.
+
+    A PH RN defaults to fdar. There is no (US, fdar) template, so without
+    reconciliation their next visit would resolve to None and fail in the pipeline --
+    a failure at generation time, minutes later, for a mistake made at the switch.
+    """
+    headers = await _account(client)
+    ph = (
+        await client.patch(
+            "/api/v1/auth/me",
+            headers=headers,
+            json={"role_title": "rn", "timezone": "Asia/Manila"},
+        )
+    ).json()
+    assert ph["default_note_format"] == "fdar"
+
+    us = (
+        await client.patch("/api/v1/auth/me", headers=headers, json={"jurisdiction": "US"})
+    ).json()
+    assert us["jurisdiction"] == "US"
+    assert us["default_note_format"] == "soapie"
+
+
+async def test_switching_jurisdiction_keeps_a_format_that_is_still_valid(
+    client: AsyncClient,
+) -> None:
+    """Reconciliation only fires when the format is actually stranded.
+
+    soapie exists in both jurisdictions, so a US RN who moves to PH keeps it rather
+    than being silently switched to fdar.
+    """
+    headers = await _account(client)
+    await client.patch(
+        "/api/v1/auth/me",
+        headers=headers,
+        json={"role_title": "rn", "timezone": "America/Los_Angeles"},
+    )
+    moved = (
+        await client.patch("/api/v1/auth/me", headers=headers, json={"jurisdiction": "PH"})
+    ).json()
+    assert moved["default_note_format"] == "soapie"
+
+
 async def test_a_ph_rn_defaults_to_fdar_and_a_us_rn_to_soapie(client: AsyncClient) -> None:
     """Role alone cannot pick a format once there are two jurisdictions.
 
@@ -1523,6 +1570,26 @@ In `backend/app/services/auth.py`, import `default_format_for` instead of `DEFAU
 ```
 
 **Ordering matters:** the timezone/jurisdiction branch from Task 1 must run *before* this one, so a single PATCH carrying both `timezone` and `role_title` derives the format from the new jurisdiction.
+
+Then, as the **last** thing `update_profile` does before committing, reconcile a stranded format:
+
+```python
+        # A jurisdiction change can strand the user's format: a PH RN defaults to
+        # fdar, and there is no (US, fdar) template. Left alone, their next visit
+        # would resolve to None and fail in the pipeline minutes later, for a mistake
+        # made here. Checked against note_templates rather than a hardcoded map, so
+        # seeding a PH shift_note later makes it valid with no code change.
+        if user.role_title is not None and user.default_note_format is not None:
+            templates = NoteTemplateRepository(self.session)
+            if await templates.get_active(user.jurisdiction, user.default_note_format) is None:
+                user.default_note_format = default_format_for(
+                    user.jurisdiction, user.role_title
+                )
+```
+
+Import `NoteTemplateRepository` from `app.repositories.note_templates`. A service calling a repository is the established direction in this codebase; a router doing so would not be.
+
+This runs after every branch, so it catches a stranded format however it arose — a jurisdiction-only PATCH, a combined one, or an explicit `default_note_format` the user is no longer entitled to.
 
 - [ ] **Step 4: Write the seed migration**
 
