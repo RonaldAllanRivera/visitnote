@@ -13,6 +13,24 @@ behind each design decision.
 ## [Unreleased]
 
 ### Added
+- **Phase 3 — capture.** Built test-first.
+  - Care recipient records: a pseudonymous label and nothing else. Deactivated rather
+    than deleted, because visits reference them and a signed note is a legal record.
+  - Tenant scoping applied in the repository rather than checked in handlers, so a new
+    route cannot forget it. Another user's record reports 404, never 403.
+  - Idempotent visit creation keyed per user, so a retry over a dropped connection
+    resolves to the existing visit instead of consuming a second unit of quota.
+  - Server-enforced consent gate: a live recording is refused without an
+    acknowledgment, and the acknowledgment is written in the same transaction as the
+    visit so a recording cannot exist without its record.
+  - Visits carry the timezone they were captured in, so a user who later moves does
+    not retro-date notes they have already written.
+  - Object storage behind a Protocol with an in-memory fake, matching the LLM and
+    transcription provider pattern. Presigned single PUT below 8MB, resumable
+    multipart above it; bytes never pass through the API.
+  - Web: a recorder state machine separate from `MediaRecorder`, a resumable uploader
+    that retries individual parts and recovers from expired signatures, and a capture
+    page with a consent step and upload progress.
 - **Phase 2 — authentication.** Built test-first.
   - argon2id password hashing with rehash-on-login, so cost parameters can be raised
     without forcing a password reset.
@@ -62,6 +80,9 @@ behind each design decision.
   deprecated. `authlib` is no longer a dependency.
 
 ### Fixed
+- Object storage selection falls back to the in-memory provider outside production
+  when credentials are absent, and refuses to start in production without them. The
+  test suite's fake had been hiding that the live endpoint returned 500 locally.
 - `/healthz` now declares its 503 response in the OpenAPI schema. Without it the
   generated client typed the error branch as `never`, so a client written against
   those types could not handle a degraded API — the case the endpoint exists for.

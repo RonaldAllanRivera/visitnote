@@ -52,6 +52,9 @@ services:
       - ./backend/app:/app/app
       - ./backend/alembic:/app/alembic
       - ./backend/tests:/app/tests
+      # Mounted so a change to the ruff/mypy/pytest configuration takes effect
+      # without rebuilding the image. Dependency changes still need a rebuild.
+      - ./backend/pyproject.toml:/app/pyproject.toml:ro
     depends_on:
       postgres:
         condition: service_healthy

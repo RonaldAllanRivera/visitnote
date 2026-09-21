@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router'
 
 import { AppLayout } from '@/components/AppLayout'
 import { Landing } from '@/routes/Landing'
+import { NewVisit } from '@/routes/NewVisit'
 import { RequireAuth } from '@/routes/RequireAuth'
 import { SignIn } from '@/routes/SignIn'
 import { SystemStatus } from '@/routes/SystemStatus'
@@ -25,7 +26,10 @@ export const router = createBrowserRouter([
       { path: 'sign-in', element: <SignIn /> },
       {
         element: <RequireAuth />,
-        children: [{ path: 'status', element: <SystemStatus /> }],
+        children: [
+          { path: 'new', element: <NewVisit /> },
+          { path: 'status', element: <SystemStatus /> },
+        ],
       },
     ],
   },

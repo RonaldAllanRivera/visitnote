@@ -131,10 +131,193 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Clients */
+        get: operations["list_clients_api_v1_clients_get"];
+        put?: never;
+        /** Create Client */
+        post: operations["create_client_api_v1_clients_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Client */
+        get: operations["get_client_api_v1_clients__client_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Client
+         * @description Deactivate rather than erase.
+         *
+         *     Visits reference this row, and a signed note is a legal record. Removing the row
+         *     would orphan documentation the user may be required to produce later.
+         */
+        delete: operations["delete_client_api_v1_clients__client_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Client */
+        patch: operations["update_client_api_v1_clients__client_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Visit
+         * @description Open a visit.
+         *
+         *     A replayed idempotency key answers 200 with the existing visit rather than 201,
+         *     so a client can tell whether its retry created anything.
+         */
+        post: operations["create_visit_api_v1_visits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/visits/{visit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Visit */
+        get: operations["get_visit_api_v1_visits__visit_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/visits/{visit_id}/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Begin Upload
+         * @description Negotiate an upload.
+         *
+         *     Returns a single presigned PUT for a small file, or a multipart upload with one
+         *     URL per part for anything sizeable. Bytes go straight to the bucket; they never
+         *     pass through this API.
+         */
+        post: operations["begin_upload_api_v1_visits__visit_id__upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/visits/{visit_id}/upload/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reissue Parts
+         * @description Fresh URLs for parts that have not finished, so an interrupted upload resumes.
+         */
+        post: operations["reissue_parts_api_v1_visits__visit_id__upload_parts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/visits/{visit_id}/upload/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Upload */
+        post: operations["complete_upload_api_v1_visits__visit_id__upload_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * CaptureMode
+         * @description How the audio was obtained.
+         *
+         *     The distinction is legal, not technical: live_audio records a third party and
+         *     requires their acknowledgment, spoken_recap is the user dictating afterwards and
+         *     records nobody else.
+         * @enum {string}
+         */
+        CaptureMode: "live_audio" | "spoken_recap";
+        /** ClientCreate */
+        ClientCreate: {
+            /** Label */
+            label: string;
+        };
+        /** ClientRead */
+        ClientRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Is Active */
+            is_active: boolean;
+        };
+        /** ClientUpdate */
+        ClientUpdate: {
+            /** Label */
+            label?: string | null;
+        };
+        /** CompletedPartIn */
+        CompletedPartIn: {
+            /** Part Number */
+            part_number: number;
+            /** Etag */
+            etag: string;
+        };
         /** Credentials */
         Credentials: {
             /**
@@ -214,6 +397,25 @@ export interface components {
             /** Timezone */
             timezone?: string | null;
         };
+        /** PartUrl */
+        PartUrl: {
+            /** Part Number */
+            part_number: number;
+            /** Url */
+            url: string;
+        };
+        /** PartsRequest */
+        PartsRequest: {
+            /** Part Numbers */
+            part_numbers: number[];
+        };
+        /** PartsResponse */
+        PartsResponse: {
+            /** Upload Id */
+            upload_id: string;
+            /** Parts */
+            parts: components["schemas"]["PartUrl"][];
+        };
         /** RefreshRequest */
         RefreshRequest: {
             /** Refresh Token */
@@ -238,6 +440,34 @@ export interface components {
             token_type: string;
             /** Expires In */
             expires_in: number;
+        };
+        /** UploadBegin */
+        UploadBegin: {
+            /** Content Type */
+            content_type: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
+        /** UploadComplete */
+        UploadComplete: {
+            /** Parts */
+            parts?: components["schemas"]["CompletedPartIn"][];
+        };
+        /** UploadTicket */
+        UploadTicket: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "single" | "multipart";
+            /** Url */
+            url?: string | null;
+            /** Upload Id */
+            upload_id?: string | null;
+            /** Part Size Bytes */
+            part_size_bytes?: number | null;
+            /** Parts */
+            parts: components["schemas"]["PartUrl"][];
         };
         /** UserProfile */
         UserProfile: {
@@ -270,6 +500,50 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** VisitCreate */
+        VisitCreate: {
+            /**
+             * Client Id
+             * Format: uuid
+             */
+            client_id: string;
+            capture_mode: components["schemas"]["CaptureMode"];
+            /** Idempotency Key */
+            idempotency_key: string;
+            note_format?: components["schemas"]["NoteFormat"] | null;
+            /**
+             * Consent Acknowledged
+             * @default false
+             */
+            consent_acknowledged: boolean;
+        };
+        /** VisitRead */
+        VisitRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Client Id
+             * Format: uuid
+             */
+            client_id: string;
+            note_format: components["schemas"]["NoteFormat"];
+            capture_mode: components["schemas"]["CaptureMode"];
+            status: components["schemas"]["VisitStatus"];
+            /** Timezone */
+            timezone: string;
+            /** Duration Seconds */
+            duration_seconds: number | null;
+            /** Audio Key */
+            audio_key: string | null;
+        };
+        /**
+         * VisitStatus
+         * @enum {string}
+         */
+        VisitStatus: "recording" | "uploaded" | "processing" | "ready" | "signed" | "failed";
     };
     responses: never;
     parameters: never;
@@ -511,6 +785,323 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_clients_api_v1_clients_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientRead"][];
+                };
+            };
+        };
+    };
+    create_client_api_v1_clients_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_client_api_v1_clients__client_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_client_api_v1_clients__client_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_client_api_v1_clients__client_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_visit_api_v1_visits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_visit_api_v1_visits__visit_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    begin_upload_api_v1_visits__visit_id__upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadBegin"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadTicket"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reissue_parts_api_v1_visits__visit_id__upload_parts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_upload_api_v1_visits__visit_id__upload_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadComplete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitRead"];
                 };
             };
             /** @description Validation Error */
