@@ -45,6 +45,7 @@ class VisitService:
             Visit(
                 user_id=user.id,
                 client_id=care_recipient.id,
+                jurisdiction=user.jurisdiction,
                 note_format=payload.note_format
                 or user.default_note_format
                 or NoteFormat.SHIFT_NOTE,

@@ -250,3 +250,31 @@ async def test_visit_status_is_readable_by_its_owner(client: AsyncClient) -> Non
 async def test_creating_a_visit_requires_authentication(client: AsyncClient) -> None:
     response = await client.post("/api/v1/visits", json=_payload(str(uuid.uuid4())))
     assert response.status_code == 401
+
+
+# -- jurisdiction ------------------------------------------------------------------
+
+
+async def test_a_visit_carries_the_jurisdiction_it_was_captured_under(
+    client: AsyncClient,
+) -> None:
+    headers = await _account(client, timezone="Asia/Manila")
+    visit = await _create(client, headers, _payload(await _client_record(client, headers)))
+    assert visit["jurisdiction"] == "PH"
+
+
+async def test_changing_jurisdiction_does_not_rewrite_existing_visits(
+    client: AsyncClient,
+) -> None:
+    """The same argument the row already makes for timezone.
+
+    A nurse who moves must not have the notes she already captured re-resolved against
+    a different jurisdiction's template.
+    """
+    headers = await _account(client, timezone="Asia/Manila")
+    visit = await _create(client, headers, _payload(await _client_record(client, headers)))
+
+    await client.patch("/api/v1/auth/me", headers=headers, json={"jurisdiction": "US"})
+
+    unchanged = (await client.get(f"/api/v1/visits/{visit['id']}", headers=headers)).json()
+    assert unchanged["jurisdiction"] == "PH"

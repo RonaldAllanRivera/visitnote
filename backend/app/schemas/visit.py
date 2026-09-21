@@ -4,7 +4,7 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.enums import CaptureMode, NoteFormat, VisitStatus
+from app.models.enums import CaptureMode, Jurisdiction, NoteFormat, VisitStatus
 
 
 class VisitCreate(BaseModel):
@@ -39,6 +39,7 @@ class VisitRead(BaseModel):
 
     id: uuid.UUID
     client_id: uuid.UUID
+    jurisdiction: Jurisdiction
     note_format: NoteFormat
     capture_mode: CaptureMode
     status: VisitStatus

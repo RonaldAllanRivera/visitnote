@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.llm.pipeline import Pipeline, PipelineError
 from app.llm.providers import FakeLLMProvider, LLMOutputError
 from app.models import Client, Note, NoteFlag, ProcessingJob, Transcript, User, Visit
-from app.models.enums import CaptureMode, JobStage, JobStatus, NoteFormat, VisitStatus
+from app.models.enums import CaptureMode, JobStage, JobStatus, Jurisdiction, NoteFormat, VisitStatus
 from app.observability import RecordingTracer
 from app.storage import FakeStorageProvider
 from app.transcription import FakeTranscriptionProvider, TranscriptTurn
@@ -95,6 +95,7 @@ async def _visit(
     visit = Visit(
         user_id=user.id,
         client_id=care_recipient.id,
+        jurisdiction=Jurisdiction.US,
         note_format=note_format,
         capture_mode=CaptureMode.LIVE_AUDIO,
         status=VisitStatus.UPLOADED,

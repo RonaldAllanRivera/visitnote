@@ -15,7 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.llm.contract import GeneratedFlag, GeneratedNote
 from app.llm.templates import TemplateSpec
 from app.models import Client, Note, NoteFlag, NoteTemplate, User, Visit
-from app.models.enums import CaptureMode, FlagSeverity, NoteFormat, ReviewStatus, VisitStatus
+from app.models.enums import (
+    CaptureMode,
+    FlagSeverity,
+    Jurisdiction,
+    NoteFormat,
+    ReviewStatus,
+    VisitStatus,
+)
 from app.repositories.notes import NoteRepository
 
 
@@ -31,6 +38,7 @@ async def _visit(session: AsyncSession) -> Visit:
     visit = Visit(
         user_id=user.id,
         client_id=care_recipient.id,
+        jurisdiction=Jurisdiction.US,
         note_format=NoteFormat.SHIFT_NOTE,
         capture_mode=CaptureMode.SPOKEN_RECAP,
         status=VisitStatus.PROCESSING,

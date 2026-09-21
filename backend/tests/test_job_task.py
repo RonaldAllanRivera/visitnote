@@ -16,7 +16,7 @@ from app.jobs import pipeline as task_module
 from app.jobs.pipeline import MAX_ATTEMPTS, process_visit
 from app.llm.pipeline import PipelineError
 from app.models import Client, ProcessingJob, User, Visit
-from app.models.enums import CaptureMode, JobStage, JobStatus, NoteFormat, VisitStatus
+from app.models.enums import CaptureMode, JobStage, JobStatus, Jurisdiction, NoteFormat, VisitStatus
 from app.observability import RecordingTracer
 
 
@@ -46,6 +46,7 @@ async def _visit(session: AsyncSession) -> Visit:
     visit = Visit(
         user_id=user.id,
         client_id=care_recipient.id,
+        jurisdiction=Jurisdiction.US,
         note_format=NoteFormat.SHIFT_NOTE,
         capture_mode=CaptureMode.SPOKEN_RECAP,
         status=VisitStatus.UPLOADED,

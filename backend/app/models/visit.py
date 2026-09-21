@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, Timestamped, UtcDateTime, UUIDPrimaryKey
-from app.models.enums import CaptureMode, NoteFormat, VisitStatus
+from app.models.enums import CaptureMode, Jurisdiction, NoteFormat, VisitStatus, jurisdiction_column
 from app.models.enums import note_format_column as _format_column
 
 
@@ -31,6 +31,11 @@ class Visit(UUIDPrimaryKey, Timestamped, Base):
     client_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("clients.id", ondelete="RESTRICT"), nullable=False
     )
+
+    # Copied from the user at creation, not read from them later -- the same argument
+    # as `timezone` below. Changing your jurisdiction must not re-resolve the template
+    # for work you already captured.
+    jurisdiction: Mapped[Jurisdiction] = mapped_column(jurisdiction_column(), nullable=False)
 
     note_format: Mapped[NoteFormat] = mapped_column(_format_column(), nullable=False)
     capture_mode: Mapped[CaptureMode] = mapped_column(
