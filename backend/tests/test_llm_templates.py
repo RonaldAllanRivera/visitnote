@@ -5,6 +5,8 @@ format-specific is read out of the `note_templates` row, so adding a third forma
 a data change plus a prompt module rather than a branch in the pipeline.
 """
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,19 +28,21 @@ FLAG_SCHEMA = {
 }
 
 
-def _spec() -> TemplateSpec:
-    return TemplateSpec.from_schemas(
-        jurisdiction=Jurisdiction.US,
-        note_format=NoteFormat.SHIFT_NOTE,
-        version=1,
-        name="Shift Note",
-        requires_diarization=True,
-        section_schema=SECTION_SCHEMA,
-        flag_schema=FLAG_SCHEMA,
-        prompt_version="shift_note_v1",
-        llm_provider="anthropic",
-        model_id="test-model",
-    )
+def _spec(**overrides: Any) -> TemplateSpec:
+    defaults: dict[str, Any] = {
+        "jurisdiction": Jurisdiction.US,
+        "note_format": NoteFormat.SHIFT_NOTE,
+        "version": 1,
+        "name": "Shift Note",
+        "requires_diarization": True,
+        "section_schema": SECTION_SCHEMA,
+        "flag_schema": FLAG_SCHEMA,
+        "prompt_version": "shift_note_v1",
+        "llm_provider": "anthropic",
+        "model_id": "test-model",
+    }
+    defaults.update(overrides)
+    return TemplateSpec.from_schemas(**defaults)
 
 
 def test_sections_are_exposed_in_schema_order() -> None:
@@ -112,3 +116,60 @@ async def test_both_seeded_templates_parse_into_a_spec(session: AsyncSession) ->
     assert len(by_format[NoteFormat.SHIFT_NOTE].section_keys) == 9
     assert len(by_format[NoteFormat.SOAPIE].section_keys) == 10
     assert by_format[NoteFormat.SOAPIE].severity_of("MISSING_VITALS") == "critical"
+
+
+_FDAR_SECTIONS = {
+    "sections": [
+        {
+            "key": "shift_details",
+            "label": "Shift details",
+            "order": 1,
+            "description": "Unit, bed, shift.",
+        },
+        {
+            "key": "focus_entries",
+            "label": "Focus entries",
+            "order": 2,
+            "description": "One entry per focus.",
+            "repeating": True,
+            "fields": [
+                {"key": "focus", "label": "Focus", "order": 1, "description": "The problem."},
+                {"key": "data", "label": "Data", "order": 2, "description": "Findings."},
+                {"key": "action", "label": "Action", "order": 3, "description": "Interventions."},
+                {
+                    "key": "response",
+                    "label": "Response",
+                    "order": 4,
+                    "description": "Patient response.",
+                },
+            ],
+        },
+    ]
+}
+
+
+def test_a_repeating_section_parses_its_fields() -> None:
+    spec = _spec(section_schema=_FDAR_SECTIONS)
+    focus_entries = next(s for s in spec.sections if s.key == "focus_entries")
+    assert focus_entries.repeating is True
+    assert tuple(f.key for f in focus_entries.fields) == ("focus", "data", "action", "response")
+
+
+def test_a_flat_section_has_no_fields_and_is_not_repeating() -> None:
+    spec = _spec(section_schema=_FDAR_SECTIONS)
+    shift_details = next(s for s in spec.sections if s.key == "shift_details")
+    assert shift_details.repeating is False
+    assert shift_details.fields == ()
+
+
+def test_a_repeating_section_becomes_an_array_in_the_output_contract() -> None:
+    """A shift produces several FDAR entries, so the contract must allow several.
+
+    A string here would force the model to flatten three foci into one blob, which is
+    exactly the deficiency MISSING_RESPONSE exists to catch.
+    """
+    schema = json_schema_for(_spec(section_schema=_FDAR_SECTIONS))
+    focus_entries = schema["properties"]["sections"]["properties"]["focus_entries"]
+    assert focus_entries["type"] == "array"
+    assert set(focus_entries["items"]["required"]) == {"focus", "data", "action", "response"}
+    assert focus_entries["items"]["additionalProperties"] is False

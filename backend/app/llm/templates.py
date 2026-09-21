@@ -27,6 +27,24 @@ class SectionSpec:
     label: str
     order: int
     description: str
+    # FDAR charts one F-D-A-R block per focus, and a shift has several. Every other
+    # format is a flat list, so this is False everywhere but there.
+    repeating: bool = False
+    fields: tuple["SectionSpec", ...] = ()
+
+
+def _parse_sections(items: list[dict[str, Any]]) -> tuple[SectionSpec, ...]:
+    return tuple(
+        SectionSpec(
+            key=str(item["key"]),
+            label=str(item["label"]),
+            order=int(item["order"]),
+            description=str(item.get("description", "")),
+            repeating=bool(item.get("repeating", False)),
+            fields=_parse_sections(item.get("fields", [])),
+        )
+        for item in sorted(items, key=lambda s: int(s["order"]))
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,15 +97,7 @@ class TemplateSpec:
         llm_provider: str,
         model_id: str,
     ) -> "TemplateSpec":
-        sections = tuple(
-            SectionSpec(
-                key=str(item["key"]),
-                label=str(item["label"]),
-                order=int(item["order"]),
-                description=str(item.get("description", "")),
-            )
-            for item in sorted(section_schema["sections"], key=lambda s: int(s["order"]))
-        )
+        sections = _parse_sections(section_schema["sections"])
         flags = tuple(
             FlagSpec(
                 code=str(item["code"]),
@@ -126,6 +136,29 @@ class TemplateSpec:
         return None
 
 
+def _section_property(section: SectionSpec) -> dict[str, Any]:
+    """The output contract for one section.
+
+    A repeating section is an array of objects, so three foci arrive as three entries
+    rather than as one flattened string the flag engine cannot inspect per-entry.
+    """
+    if not section.repeating:
+        return {"type": ["string", "null"], "description": section.description}
+    return {
+        "type": "array",
+        "description": section.description,
+        "items": {
+            "type": "object",
+            "properties": {
+                field.key: {"type": ["string", "null"], "description": field.description}
+                for field in section.fields
+            },
+            "required": [field.key for field in section.fields],
+            "additionalProperties": False,
+        },
+    }
+
+
 def json_schema_for(spec: TemplateSpec) -> dict[str, Any]:
     """The output contract, expressed as JSON Schema for the provider to constrain on.
 
@@ -151,11 +184,7 @@ def json_schema_for(spec: TemplateSpec) -> dict[str, Any]:
             "sections": {
                 "type": "object",
                 "properties": {
-                    section.key: {
-                        "type": ["string", "null"],
-                        "description": section.description,
-                    }
-                    for section in spec.sections
+                    section.key: _section_property(section) for section in spec.sections
                 },
                 # Every key required, null where unsupported. An omitted key and a
                 # deliberately empty section would otherwise be indistinguishable,
