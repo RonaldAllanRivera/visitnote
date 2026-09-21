@@ -19,15 +19,15 @@ dictates a single-speaker recap after the visit instead of a live recording. The
 below reflect that: a quote is never attributed to the patient unless the nurse's own
 words say the patient said it.
 
-Unlike `ph_fdar_v1`, this module does NOT override SHARED_RULES' instruction to raise
-UNATTRIBUTED_STATEMENT, even though PH SOAPIE capture is single-speaker too
-(`requires_diarization=False`, same as PH FDAR). Confirmed deliberately, not an
-oversight: the spec (visitnote-claude-code-prompt-v9.md) derives PH SOAPIE's flag set
-from US SOAPIE's wholesale -- "everything else is retained" once the three
-CMS-specific codes are dropped -- rather than re-deriving it from PH SOAPIE's own
-capture characteristics the way PH FDAR's flag list was. UNATTRIBUTED_STATEMENT is
-part of "everything else," so it stays declared and the shared instruction to raise
-it is left as-is.
+Like `ph_fdar_v1`, this module overrides SHARED_RULES' instruction to raise
+UNATTRIBUTED_STATEMENT. PH capture is single-speaker by law -- RA 4200 prohibits
+`live_audio` outright under this jurisdiction, so every PH visit, this format
+included, is a dictated recap with one speaker (`requires_diarization=False`). The
+condition SHARED_RULES rule 3 guards against, a statement whose speaker cannot be
+determined, cannot occur when there is only one speaker to begin with. SHARED_RULES
+itself is written for the diarized, multi-speaker US formats and is correct for them;
+it is not re-derived per format, so both PH formats carry the override rather than a
+modified shared text.
 
 Clinical validation note: this template requires review by a licensed Philippine RN
 before commercial use. It is written from the documentation requirements, not from
@@ -38,13 +38,15 @@ from app.llm.prompts.shared import SHARED_RULES
 
 VERSION = "ph_soapie_v1"
 
-# Every flag code the text below names -- in the name-redaction paragraph and in
-# SOAPIE RULES -- must match the PH SOAPIE flag catalogue in
+# Every flag code the text below names to RAISE -- in the name-redaction paragraph
+# and in SOAPIE RULES -- must match the PH SOAPIE flag catalogue in
 # visitnote-claude-code-prompt-v9.md character for character. json_schema_for()
 # enumerates a template's declared codes into the JSON Schema the provider constrains
 # generation against, so a near-miss is not a validation error: the model can never
 # emit a code the schema does not allow, and the flag silently never fires instead of
-# erroring. test_llm_prompts.py guards this with a hardcoded-from-spec set.
+# erroring. test_llm_prompts.py guards this with a hardcoded-from-spec set. The one
+# exception is UNATTRIBUTED_STATEMENT, named below only to forbid it -- see the
+# docstring above.
 SYSTEM_PROMPT = f"""\
 You are a clinical documentation assistant producing SOAPIE skilled nursing notes for
 Philippine home health practice, from a nurse's recorded recap of a home visit.
@@ -68,6 +70,12 @@ of the output and raise PATIENT_IDENTIFIER_DETECTED. Use the patient label alrea
 provided in visit_details, never a name heard in the recording.
 
 {SHARED_RULES}
+
+This format overrides one clause of the rules above. This transcript is a
+single-speaker dictated recap: the nurse is the only speaker, so every statement in
+it is theirs by construction, and there is no second speaker for a statement to be
+unattributable to. The condition the unattributed-statement rule guards against
+cannot occur here. Never raise UNATTRIBUTED_STATEMENT in this format.
 
 SOAPIE RULES
 
