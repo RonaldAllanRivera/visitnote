@@ -13,6 +13,28 @@ behind each design decision.
 ## [Unreleased]
 
 ### Added
+- **Phase 2 — authentication.** Built test-first.
+  - argon2id password hashing with rehash-on-login, so cost parameters can be raised
+    without forcing a password reset.
+  - Short-lived JWT access tokens carrying no authorisation claims: staff status is
+    read from the database on every request, so revoking it takes effect immediately
+    rather than when the token expires.
+  - Rotating single-use refresh tokens stored as SHA-256 hashes and grouped into
+    per-login families. Replaying a rotated token revokes the entire family; a token
+    from an already-closed session is reported as unknown rather than as an attack.
+  - Login throttling with a short, self-clearing lockout, applied to unknown
+    addresses too so the endpoint cannot be used to enumerate accounts.
+  - Google sign-in by ID token, verified against Google's published keys with
+    audience and issuer pinned, behind a Protocol with a fake for tests. Links to an
+    existing password account only when Google reports the address verified.
+  - Onboarding that derives a default note format from the user's role and validates
+    the IANA timezone at the edge.
+  - `create-staff-user` CLI. Staff privilege is granted out of band only; no API
+    route sets `is_staff`.
+  - Web: access token held in memory, refresh token persisted and survivable across
+    reloads, a single-flight refresh coordinator, and a fetch layer that recovers
+    from an expired token without replaying a rotated one.
+
 - **Phase 1 — monorepo scaffold.**
   - FastAPI service with a layered structure (`routers` → `services` → `repositories`),
     settings sourced entirely from the environment, structured JSON logging to stdout,
@@ -34,6 +56,10 @@ behind each design decision.
     step asserting migrations are reversible.
 - Repository documentation: `README.md`, this changelog, and `.gitignore`.
 - Build specification v8 and its decision log.
+
+### Changed
+- Google ID token verification uses PyJWT rather than `authlib.jose`, which is
+  deprecated. `authlib` is no longer a dependency.
 
 ### Fixed
 - `/healthz` now declares its 503 response in the OpenAPI schema. Without it the
