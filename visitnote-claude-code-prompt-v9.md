@@ -302,7 +302,17 @@ Philippine analogue.
 
 Flag schema drops `MISSING_HOMEBOUND`, `MISSING_NECESSITY_RATIONALE` and
 `MISSING_POC_LINK` — all three are CMS home-health survey requirements, not clinical
-documentation standards. Everything else is retained.
+documentation standards.
+
+It also drops **`UNATTRIBUTED_STATEMENT`**, for the same structural reason PH FDAR does.
+PH capture is `spoken_recap` only, so the transcript is a single-speaker dictation and no
+statement can have an indeterminate speaker. The flag would have no path to firing, and a
+declared flag that can never fire leaves a permanent zero in `EVALS.md` for a future
+reader to reverse-engineer. Both PH prompts therefore carry an explicit override
+suppressing the shared unattributed-statement rule, which is written for the diarized US
+formats.
+
+Everything else is retained.
 
 This template exists to prove the jurisdiction axis carries real semantic weight. It
 costs one seed row and one prompt module.
@@ -344,8 +354,10 @@ the time taken), `MISSING_INTAKE_OUTPUT`, `PAIN_NOT_REASSESSED`,
 `ORDER_NOT_ACKNOWLEDGED`, `MISSING_ENDORSEMENT`, `VAGUE_LANGUAGE`. Info:
 `MISSING_EDUCATION_RESPONSE`.
 
-`UNATTRIBUTED_STATEMENT` is **not** in the PH FDAR flag set. A spoken recap has one
-speaker; there is nothing to attribute.
+`UNATTRIBUTED_STATEMENT` is **not** in the PH FDAR flag set, nor in PH SOAPIE's. A
+spoken recap has one speaker; there is nothing to attribute. Note that this is a property
+of the *jurisdiction*, not of the format — it follows from PH capture being
+`spoken_recap` only — so it applies to every PH template and would apply to a fifth.
 
 ### Deferred · PH Endorsement
 
