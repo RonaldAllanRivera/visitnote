@@ -113,3 +113,20 @@ def jurisdiction_column() -> Enum:
         length=2,
         values_callable=lambda e: [m.value for m in e],
     )
+
+
+def note_format_column() -> Enum:
+    """NoteFormat as a VARCHAR that still round-trips to the Python enum.
+
+    `native_enum=False` emits VARCHAR instead of a Postgres ENUM; `create_constraint=False`
+    leaves the value set open, because a format's validity is established by having a row
+    in `note_templates`, not by the column type. Without this, a bare String column typed
+    `Mapped[NoteFormat]` loads back as `str` and every `is` comparison silently fails.
+    """
+    return Enum(
+        NoteFormat,
+        native_enum=False,
+        create_constraint=False,
+        length=32,
+        values_callable=lambda e: [m.value for m in e],
+    )

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, Timestamped, UUIDPrimaryKey
 from app.models.enums import Jurisdiction, NoteFormat, RoleTitle, jurisdiction_column
+from app.models.enums import note_format_column as _format_column
 
 
 class User(UUIDPrimaryKey, Timestamped, Base):
@@ -25,10 +26,7 @@ class User(UUIDPrimaryKey, Timestamped, Base):
         Enum(RoleTitle, name="role_title", values_callable=lambda e: [m.value for m in e]),
         nullable=True,
     )
-    default_note_format: Mapped[NoteFormat | None] = mapped_column(
-        Enum(NoteFormat, name="note_format", values_callable=lambda e: [m.value for m in e]),
-        nullable=True,
-    )
+    default_note_format: Mapped[NoteFormat | None] = mapped_column(_format_column(), nullable=True)
 
     # IANA zone. Every visit this user captures inherits it, and notes render in it.
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")

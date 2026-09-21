@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, Timestamped, UtcDateTime, UUIDPrimaryKey
 from app.models.enums import CaptureMode, NoteFormat, VisitStatus
+from app.models.enums import note_format_column as _format_column
 
 
 def _enum(enum_type: type, name: str) -> Enum:
@@ -31,9 +32,7 @@ class Visit(UUIDPrimaryKey, Timestamped, Base):
         UUID(as_uuid=True), ForeignKey("clients.id", ondelete="RESTRICT"), nullable=False
     )
 
-    note_format: Mapped[NoteFormat] = mapped_column(
-        _enum(NoteFormat, "note_format"), nullable=False
-    )
+    note_format: Mapped[NoteFormat] = mapped_column(_format_column(), nullable=False)
     capture_mode: Mapped[CaptureMode] = mapped_column(
         _enum(CaptureMode, "capture_mode"), nullable=False
     )

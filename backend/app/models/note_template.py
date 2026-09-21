@@ -8,24 +8,21 @@ Provider and model identifiers live on the row so different formats can pin diff
 models, and so a model change is a configuration change rather than a deployment.
 """
 
-from sqlalchemy import Boolean, Enum, String, UniqueConstraint
+from sqlalchemy import Boolean, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, Json, Timestamped, UUIDPrimaryKey
 from app.models.enums import NoteFormat
+from app.models.enums import note_format_column as _format_column
 
 
 class NoteTemplate(UUIDPrimaryKey, Timestamped, Base):
     __tablename__ = "note_templates"
-    __table_args__ = (
-        UniqueConstraint("format", "version", name="format_version"),
-    )
+    __table_args__ = (UniqueConstraint("format", "version", name="format_version"),)
 
-    format: Mapped[NoteFormat] = mapped_column(
-        Enum(NoteFormat, name="note_format", values_callable=lambda e: [m.value for m in e]),
-        nullable=False,
-        index=True,
-    )
+    # VARCHAR rather than a Postgres ENUM: formats are a growing set, and a format's
+    # validity is established by having a row in this table -- not by the column type.
+    format: Mapped[NoteFormat] = mapped_column(_format_column(), nullable=False, index=True)
     version: Mapped[int] = mapped_column(nullable=False, default=1)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
 

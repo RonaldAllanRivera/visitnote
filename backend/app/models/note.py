@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, Json, Timestamped, UtcDateTime, UUIDPrimaryKey
 from app.models.enums import FlagSeverity, NoteFormat, ReviewStatus
+from app.models.enums import note_format_column as _format_column
 
 
 def _enum(enum_type: type, name: str) -> Enum:
@@ -67,7 +68,9 @@ class Note(UUIDPrimaryKey, Timestamped, Base):
     # agency at the time of writing.
     agency_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
-    format: Mapped[NoteFormat] = mapped_column(_enum(NoteFormat, "note_format"), nullable=False)
+    # VARCHAR rather than a Postgres ENUM: formats are a growing set, and a format's
+    # validity is established by having a row in note_templates -- not by the column type.
+    format: Mapped[NoteFormat] = mapped_column(_format_column(), nullable=False)
 
     # The structured header: label, date, and the exact times. Separate from
     # `sections` because it is the part that gets checked rather than read -- the

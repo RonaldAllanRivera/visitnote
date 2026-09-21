@@ -5,6 +5,7 @@ LLM layer. A missing or malformed seed is not a cosmetic problem -- it is a form
 that cannot be rendered or validated.
 """
 
+import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,11 +51,50 @@ async def test_section_ordering_is_contiguous_and_flag_codes_are_unique(
 async def test_soapie_requires_a_necessity_rationale_flag(session: AsyncSession) -> None:
     """The flag that makes a skilled visit billable is present by definition."""
     row = (
-        await session.execute(
-            select(NoteTemplate).where(NoteTemplate.format == NoteFormat.SOAPIE)
-        )
+        await session.execute(select(NoteTemplate).where(NoteTemplate.format == NoteFormat.SOAPIE))
     ).scalar_one()
 
     critical = {f["code"] for f in row.flag_schema["flags"] if f["severity"] == "critical"}
     assert "MISSING_NECESSITY_RATIONALE" in critical
     assert "MISSING_HOMEBOUND" in critical
+
+
+async def test_a_new_format_value_needs_no_type_alteration(session: AsyncSession) -> None:
+    """The point of leaving the ENUM: a fourth format is an INSERT, not a DDL change.
+
+    This inserts a format string no Python enum member covers. Under the old
+    Postgres ENUM it raised InvalidTextRepresentation.
+    """
+    await session.execute(
+        sa.text(
+            """
+            INSERT INTO note_templates (
+                format, version, name, section_schema, flag_schema,
+                prompt_version, llm_provider, model_id, is_active
+            ) VALUES (
+                'a_format_from_the_future', 1, 'Future', '{"sections": []}'::jsonb,
+                '{"flags": []}'::jsonb, 'future_v1', 'anthropic', 'test-model', false
+            )
+            """
+        )
+    )
+    await session.commit()
+
+    stored = (
+        await session.execute(
+            sa.text("SELECT format FROM note_templates WHERE prompt_version = 'future_v1'")
+        )
+    ).scalar_one()
+    assert stored == "a_format_from_the_future"
+
+    await session.execute(sa.text("DELETE FROM note_templates WHERE prompt_version = 'future_v1'"))
+    await session.commit()
+
+
+async def test_the_note_format_enum_type_is_gone(session: AsyncSession) -> None:
+    exists = (
+        await session.execute(
+            sa.text("SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'note_format')")
+        )
+    ).scalar_one()
+    assert exists is False
