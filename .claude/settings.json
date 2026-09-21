@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {
+    "vercel@claude-plugins-official": false,
+    "chrome-devtools-mcp@claude-plugins-official": false,
+    "plugin-dev@claude-plugins-official": false,
+    "skill-creator@claude-plugins-official": false
+  }
+}

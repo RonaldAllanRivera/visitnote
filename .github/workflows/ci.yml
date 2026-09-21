@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch cancels the previous run. CI minutes spent verifying
+# a commit nobody will merge are wasted.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (ruff, mypy, pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    # Tests run against real PostgreSQL and real Redis. Cross-tenant isolation,
+    # aggregation correctness, and TIMESTAMPTZ behaviour across a DST boundary either
+    # do not exist or behave differently in SQLite, so substituting one would mean
+    # the tests that matter most are the ones not being run.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: visitnote
+          POSTGRES_PASSWORD: visitnote
+          POSTGRES_DB: visitnote
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U visitnote"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+    env:
+      ENVIRONMENT: ci
+      DATABASE_URL: postgresql://visitnote:visitnote@localhost:5432/visitnote
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-only-secret-value-at-least-32-characters-long
+      CORS_ORIGINS: http://localhost:5173
+      TRUSTED_HOSTS: localhost,127.0.0.1
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type check
+        run: mypy app
+
+      - name: Migrate
+        # Migrations are a distinct step here for the same reason they are in the
+        # deploy pipeline: a migration failure must be distinguishable from a test
+        # failure, and must never run implicitly at application startup.
+        run: alembic upgrade head
+
+      - name: Verify migrations are reversible
+        # A rollback path that is never exercised is a rollback path that does not
+        # work. Discovering that during an incident is the worst possible time.
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Test
+        run: pytest -q
+
+  web:
+    name: web (tsc, vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test -- --run

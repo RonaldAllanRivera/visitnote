@@ -1,0 +1,81 @@
+# Local development. Production uses docker-compose.prod.yml, which pulls built images
+# from a registry and adds Caddy for TLS.
+#
+# Migrations are deliberately NOT run on container start. They run as an explicit
+# one-off step, exactly as the deploy pipeline does it:
+#     docker compose run --rm api alembic upgrade head
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: visitnote
+      POSTGRES_PASSWORD: visitnote
+      POSTGRES_DB: visitnote
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visitnote -d visitnote"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # No published port. Redis is reachable only on the compose network, matching
+    # production, and the host commonly already has a Redis on 6379. Reach it with:
+    #     docker compose exec redis redis-cli
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    command:
+      - uvicorn
+      - app.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --reload
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      # Source is mounted for hot reload. The installed package metadata lives in
+      # site-packages, so the editable install survives the mount.
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/tests:/app/tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  worker:
+    build:
+      context: ./backend
+    command: ["arq", "app.worker.WorkerSettings"]
+    env_file: .env
+    volumes:
+      - ./backend/app:/app/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
