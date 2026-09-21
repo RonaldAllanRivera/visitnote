@@ -8,9 +8,11 @@ a fabrication. So the rule errs towards "unknown", and the prompt says so out lo
 import pytest
 
 from app.llm.prompts import (
+    SHARED_RULES,
     UnknownPromptVersionError,
     get_prompt,
     infer_recording_speaker,
+    known_versions,
     render_transcript,
 )
 from app.transcription import TranscriptTurn
@@ -142,3 +144,32 @@ def test_an_unknown_recording_user_produces_an_explicit_instruction_not_silence(
 
     assert "could not be determined" in rendered
     assert "UNATTRIBUTED_STATEMENT" in rendered
+
+
+# -- PH prompt modules -------------------------------------------------------
+
+
+def test_the_ph_prompt_versions_are_registered() -> None:
+    assert {"ph_soapie_v1", "ph_fdar_v1"} <= set(known_versions())
+
+
+def test_ph_soapie_does_not_ask_for_homebound_status() -> None:
+    """Homebound status is a CMS survey requirement with no PhilHealth analogue.
+
+    Asking for it would invite the model to invent one, which is the exact failure
+    class the fabrication checker exists to catch.
+    """
+    prompt = get_prompt("ph_soapie_v1").system_prompt.lower()
+    assert "homebound" not in prompt
+
+
+def test_ph_fdar_names_the_four_fdar_elements() -> None:
+    prompt = get_prompt("ph_fdar_v1").system_prompt.lower()
+    for element in ("focus", "data", "action", "response"):
+        assert element in prompt
+
+
+def test_every_ph_prompt_carries_the_shared_rules() -> None:
+    """The no-fabrication rules are not per-format and must not be re-stated per format."""
+    for version in ("ph_soapie_v1", "ph_fdar_v1"):
+        assert SHARED_RULES in get_prompt(version).system_prompt
