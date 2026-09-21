@@ -267,8 +267,87 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Complete Upload */
+        /**
+         * Complete Upload
+         * @description Finish the upload and hand the visit to the worker.
+         *
+         *     Enqueueing happens here rather than at visit creation: until the object exists
+         *     in the bucket there is nothing for the pipeline to fetch, and a worker sent
+         *     after audio that has not arrived yet would fail every time.
+         */
         post: operations["complete_upload_api_v1_visits__visit_id__upload_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/visits/{visit_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Visit Status
+         * @description What the capture screen polls while the note is being written.
+         *
+         *     Reports the pipeline stage alongside the visit status, because "processing" for
+         *     twenty minutes and "stuck" look identical to a client that is only told the
+         *     latter.
+         */
+        get: operations["visit_status_api_v1_visits__visit_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ops/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Jobs
+         * @description Jobs newest first, optionally filtered by status.
+         *
+         *     The filter is the reason the console exists: an operator opens it to find what
+         *     broke, and paging through successful jobs to reach the failures would make it
+         *     useless at exactly the moment it is needed.
+         */
+        get: operations["list_jobs_api_v1_ops_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ops/jobs/{visit_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Job
+         * @description Put a job back on the queue.
+         *
+         *     The attempt counter is not reset. An operator retry is a further attempt at the
+         *     same work, and clearing the history would hide a visit that has now failed six
+         *     times behind a job that looks fresh.
+         */
+        post: operations["retry_job_api_v1_ops_jobs__visit_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -366,6 +445,20 @@ export interface components {
                 [key: string]: components["schemas"]["DependencyHealth"];
             };
         };
+        /**
+         * JobStage
+         * @description How far the pipeline got.
+         *
+         *     Recorded because "it failed" is not actionable and "it failed at transcription"
+         *     is: the two failures have different causes, different costs, and different fixes.
+         * @enum {string}
+         */
+        JobStage: "queued" | "download" | "normalize" | "transcribe" | "generate" | "persist" | "complete";
+        /**
+         * JobStatus
+         * @enum {string}
+         */
+        JobStatus: "queued" | "running" | "succeeded" | "failed";
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -396,6 +489,54 @@ export interface components {
             default_note_format?: components["schemas"]["NoteFormat"] | null;
             /** Timezone */
             timezone?: string | null;
+        };
+        /** OpsJob */
+        OpsJob: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Visit Id
+             * Format: uuid
+             */
+            visit_id: string;
+            stage: components["schemas"]["JobStage"];
+            status: components["schemas"]["JobStatus"];
+            /** Attempts */
+            attempts: number;
+            /** Error Message */
+            error_message: string | null;
+            /** Audio Minutes */
+            audio_minutes: string | null;
+            /** Input Tokens */
+            input_tokens: number | null;
+            /** Output Tokens */
+            output_tokens: number | null;
+            /** Cost Usd */
+            cost_usd: string | null;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /** Trace Id */
+            trace_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** OpsJobPage */
+        OpsJobPage: {
+            /** Items */
+            items: components["schemas"]["OpsJob"][];
+            /** Total */
+            total: number;
         };
         /** PartUrl */
         PartUrl: {
@@ -516,6 +657,33 @@ export interface components {
              * @default false
              */
             consent_acknowledged: boolean;
+        };
+        /**
+         * VisitProcessingStatus
+         * @description What the capture screen polls while a note is being written.
+         *
+         *     `stage` and `attempts` are included because "processing" for twenty minutes is
+         *     indistinguishable from "stuck", and a client that cannot tell the difference
+         *     either worries the user or hides a real failure.
+         */
+        VisitProcessingStatus: {
+            /**
+             * Visit Id
+             * Format: uuid
+             */
+            visit_id: string;
+            status: components["schemas"]["VisitStatus"];
+            stage?: components["schemas"]["JobStage"] | null;
+            job_status?: components["schemas"]["JobStatus"] | null;
+            /**
+             * Attempts
+             * @default 0
+             */
+            attempts: number;
+            /** Error */
+            error?: string | null;
+            /** Note Id */
+            note_id?: string | null;
         };
         /** VisitRead */
         VisitRead: {
@@ -1102,6 +1270,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VisitRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    visit_status_api_v1_visits__visit_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitProcessingStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_jobs_api_v1_ops_jobs_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["JobStatus"] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsJobPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_job_api_v1_ops_jobs__visit_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

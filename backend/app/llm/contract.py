@@ -1,0 +1,148 @@
+"""The generated-note output contract and its validation.
+
+A language model producing output that does not conform is an expected event, not an
+exceptional one. The design consequence is that every rejection here has to carry an
+instruction the model can act on -- naming the section it invented or the phrase it
+used -- because that instruction is the entire content of the repair retry. "Invalid
+output" would waste the retry.
+"""
+
+import re
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+from app.llm.templates import VISIT_DETAIL_KEYS, TemplateSpec
+from app.models.enums import FlagSeverity
+
+# Phrases that are never acceptable in the note's own voice. Each one is a sentence
+# that documents nothing: it survives a reader's glance while telling them, and an
+# auditor, precisely zero facts.
+#
+# "stable" is deliberately absent. It is banned by the prompt only when unsupported
+# by data, and "blood pressure stable at 130/80 across three readings" is a
+# legitimate clinical statement. An automated check cannot tell those apart, so
+# enforcing it here would reject correct notes; the eval suite judges it instead.
+BANNED_PHRASES: tuple[str, ...] = (
+    "doing well",
+    "no issues",
+    "seemed fine",
+    "a little off",
+    "routine visit",
+    "routine check-up",
+    "routine checkup",
+    "care provided as ordered",
+)
+
+# Quoted spans are exempt from the ban. The rule governs how the note describes the
+# visit; what the patient actually said is evidence, and "the patient said they were
+# doing well" is a fact worth recording.
+_QUOTED_SPAN = re.compile(r'"[^"]*"|“[^”]*”')
+
+
+class NoteValidationError(Exception):
+    """The generation does not satisfy the template's contract."""
+
+    def __init__(self, repair_instruction: str) -> None:
+        super().__init__(repair_instruction)
+        self.repair_instruction = repair_instruction
+
+
+class GeneratedFlag(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    message: str
+    severity: FlagSeverity
+
+
+class GeneratedNote(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    visit_details: dict[str, str | None]
+    sections: dict[str, str | None]
+    flags: list[GeneratedFlag]
+
+
+def validate_output(payload: dict[str, Any], spec: TemplateSpec) -> GeneratedNote:
+    """Validate a generation against the active template, or explain how to fix it."""
+    try:
+        note = GeneratedNote.model_validate(payload)
+    except ValidationError as exc:
+        raise NoteValidationError(
+            "The output did not match the required shape. Return a JSON object with "
+            "exactly the keys visit_details, sections and flags. "
+            f"Errors: {_summarise(exc)}"
+        ) from exc
+
+    _check_keys(
+        actual=set(note.visit_details),
+        expected=set(VISIT_DETAIL_KEYS),
+        label="visit_details",
+    )
+    _check_keys(actual=set(note.sections), expected=set(spec.section_keys), label="sections")
+    _check_banned_phrases(note.sections)
+
+    return note.model_copy(update={"flags": _normalise_flags(note.flags, spec)})
+
+
+def _check_keys(*, actual: set[str], expected: set[str], label: str) -> None:
+    missing = sorted(expected - actual)
+    unexpected = sorted(actual - expected)
+    if not missing and not unexpected:
+        return
+
+    problems = []
+    if missing:
+        problems.append(
+            f"{label} is missing required keys: {', '.join(missing)}. "
+            "Include every key, using null where the transcript does not support one."
+        )
+    if unexpected:
+        problems.append(
+            f"{label} contains keys that are not part of this note format: "
+            f"{', '.join(unexpected)}. Remove them."
+        )
+    raise NoteValidationError(" ".join(problems))
+
+
+def _check_banned_phrases(sections: dict[str, str | None]) -> None:
+    for key, text in sections.items():
+        if not text:
+            continue
+        unquoted = _QUOTED_SPAN.sub(" ", text).lower()
+        for phrase in BANNED_PHRASES:
+            if phrase in unquoted:
+                raise NoteValidationError(
+                    f'The {key} section contains the banned phrase "{phrase}". '
+                    "Replace it with a specific, measurable statement from the "
+                    "transcript, or set the section to null and raise the "
+                    "appropriate flag. Do not invent detail to replace it."
+                )
+
+
+def _normalise_flags(flags: list[GeneratedFlag], spec: TemplateSpec) -> list[GeneratedFlag]:
+    """Reject undeclared codes; take severity from the template.
+
+    Severity is not the model's call. A missing homebound justification is a billing
+    risk whatever the generation labelled it, and the dashboards aggregate on
+    severity -- so one generation deciding a critical code is "info" would quietly
+    move a note out of the review queue.
+    """
+    normalised: list[GeneratedFlag] = []
+    for flag in flags:
+        severity = spec.severity_of(flag.code)
+        if severity is None:
+            raise NoteValidationError(
+                f'"{flag.code}" is not a flag code defined for this note format. '
+                f"Use only these codes: {', '.join(f.code for f in spec.flags)}."
+            )
+        normalised.append(flag.model_copy(update={"severity": severity}))
+    return normalised
+
+
+def _summarise(exc: ValidationError) -> str:
+    return "; ".join(
+        f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+        for error in exc.errors()[:5]
+    )

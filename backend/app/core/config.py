@@ -6,13 +6,19 @@ running with a placeholder.
 """
 
 import json
+from decimal import Decimal
 from functools import lru_cache
 from typing import Annotated, Literal
 
 from pydantic import Field, PostgresDsn, RedisDsn, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from app.llm.costs import ModelPrice
+
 Environment = Literal["local", "ci", "staging", "production"]
+# Mirrors the API's accepted effort levels. Typed rather than free-form so an
+# invalid value is a startup failure, not a 400 on the first note of the day.
+LLMEffort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
 class Settings(BaseSettings):
@@ -57,6 +63,13 @@ class Settings(BaseSettings):
     # Object storage. Absent locally, where the fake provider is used instead.
     r2_bucket: str = "visitnote-dev"
     r2_endpoint_url: str | None = None
+    # The address the *client* can reach, when it differs from the one the API uses.
+    # Locally the API reaches MinIO at minio:9000 on the compose network while the
+    # browser can only reach localhost:9000. A presigned URL is signed over the host
+    # it will be sent to, so this has to be applied at signing time -- rewriting the
+    # host afterwards invalidates the signature. Unset in production, where R2 is one
+    # address for both.
+    r2_public_endpoint_url: str | None = None
     r2_access_key_id: str | None = None
     r2_secret_access_key: str | None = None
     # Short-lived by design: a leaked URL stops working quickly, and the client
@@ -78,10 +91,39 @@ class Settings(BaseSettings):
     llm_provider: str = "anthropic"
     llm_model_id: str = "claude-sonnet-5"
     anthropic_api_key: str | None = None
+    # How hard the model works on a note. The primary cost lever, and configuration
+    # rather than code for the same reason the model id is: it is tuned against eval
+    # scores, and a tuning change must not require a deployment.
+    llm_effort: LLMEffort = "medium"
 
     transcription_provider: str = "deepgram"
     transcription_model_id: str = "nova-3"
     deepgram_api_key: str | None = None
+    # An additional layer before transcript text reaches the LLM. Off by default
+    # because it also redacts clinically relevant detail -- ages, dates, and numbers
+    # a note legitimately needs -- so it is a deployment decision, not a default.
+    deepgram_redact_pii: bool = False
+
+    # Published rates, in USD per million tokens, keyed by model id. Configuration
+    # rather than code for the same reason the model id is: prices change, and a
+    # price change must not require a deployment. A model absent from this map
+    # records no cost at all rather than a misleading zero.
+    llm_prices: dict[str, ModelPrice] = Field(
+        default_factory=lambda: {
+            "claude-sonnet-5": ModelPrice(
+                input_usd_per_mtok=Decimal("2.00"), output_usd_per_mtok=Decimal("10.00")
+            ),
+            "claude-opus-5": ModelPrice(
+                input_usd_per_mtok=Decimal("5.00"), output_usd_per_mtok=Decimal("25.00")
+            ),
+            "claude-haiku-4-5": ModelPrice(
+                input_usd_per_mtok=Decimal("1.00"), output_usd_per_mtok=Decimal("5.00")
+            ),
+        }
+    )
+    # Deepgram prerecorded, per audio minute. Verify against current pricing for a
+    # real deployment; it is here so that verifying it is a config change.
+    transcription_usd_per_minute: Decimal = Decimal("0.0043")
 
     # -- Observability -------------------------------------------------------
     sentry_dsn: str | None = None

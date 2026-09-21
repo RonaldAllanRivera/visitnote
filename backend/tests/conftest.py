@@ -15,7 +15,9 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.core.db import engine
+from app.core.queue import get_job_queue
 from app.core.redis import pool
+from app.jobs.queue import FakeJobQueue
 from app.main import create_app
 from app.storage import FakeStorageProvider, get_storage_provider
 
@@ -41,8 +43,8 @@ async def _dispose_pools() -> AsyncGenerator[None]:
 
 
 @pytest.fixture
-async def session() -> AsyncGenerator[AsyncSession]:
-    """A database session on a throwaway engine, one per test.
+async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
+    """A session factory on a throwaway engine, one per test.
 
     Tests get their own engine rather than importing the application's module-level
     `SessionFactory`, because a pooled asyncpg connection is bound to the event loop
@@ -50,15 +52,25 @@ async def session() -> AsyncGenerator[AsyncSession]:
     connection across loops produces failures that appear only when tests run
     together -- the worst kind to debug.
 
+    Exposed as a factory rather than only a session because the worker's task takes
+    one from its arq context, and handing it this is what lets the task be driven
+    outside a worker process.
+
     NullPool means no connection outlives the test that opened it.
     """
     test_engine = create_async_engine(get_settings().sqlalchemy_url, poolclass=NullPool)
-    factory = async_sessionmaker(test_engine, expire_on_commit=False)
     try:
-        async with factory() as db_session:
-            yield db_session
+        yield async_sessionmaker(test_engine, expire_on_commit=False)
     finally:
         await test_engine.dispose()
+
+
+@pytest.fixture
+async def session(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[AsyncSession]:
+    async with session_factory() as db_session:
+        yield db_session
 
 
 @pytest.fixture
@@ -74,6 +86,11 @@ async def client() -> AsyncGenerator[AsyncClient]:
     # bucket would be slow, flaky, and would leave objects behind.
     storage = FakeStorageProvider()
     app.dependency_overrides[get_storage_provider] = lambda: storage
+
+    # The queue is faked for the same reason, and one sharper: completing an upload
+    # enqueues processing, so a test reaching real Redis would hand the running
+    # worker a visit to process against the development database.
+    app.dependency_overrides[get_job_queue] = lambda: FakeJobQueue()
 
     async with (
         AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL) as ac,

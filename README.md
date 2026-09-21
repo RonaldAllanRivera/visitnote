@@ -20,10 +20,10 @@ work unless it says so here.
 
 | Phase | Scope | State |
 |---|---|:--|
-| 1 | Monorepo scaffold, FastAPI layers, Alembic, arq worker, `/healthz`, web shell, CI | **in progress** |
-| 2 | Auth: argon2, JWT access + rotating refresh with reuse detection, Google OAuth | planned |
-| 3 | Capture on web: idempotent visits, R2 multipart upload with resume, `MediaRecorder` | planned |
-| 4 | Pipeline: ffmpeg → diarized transcription → templated generation, retries, cost recording | planned |
+| 1 | Monorepo scaffold, FastAPI layers, Alembic, arq worker, `/healthz`, web shell, CI | **done** |
+| 2 | Auth: argon2, JWT access + rotating refresh with reuse detection, Google OAuth | **done** |
+| 3 | Capture on web: idempotent visits, R2 multipart upload with resume, `MediaRecorder` | **done** |
+| 4 | Pipeline: ffmpeg → diarized transcription → templated generation, retries, cost recording | **done** |
 | 5 | Review: schema-driven section editor, flags panel, version-checked edits, sign-off, PDF | planned |
 | 5b | Eval suite: golden dataset, fabrication checker, CI gate, prompt promotion | planned |
 | 6 | Billing: plans, entitlement engine, grace, quota-on-ready, manual activation | planned |
@@ -174,7 +174,7 @@ Requires Docker with the Compose plugin, and Node 22 for the web client.
 
 ```bash
 cp .env.example .env          # defaults work for local development as-is
-docker compose up --build     # api, worker, postgres, redis
+docker compose up --build     # api, worker, postgres, redis, minio
 ```
 
 The API comes up on <http://localhost:8000>:
@@ -184,6 +184,25 @@ The API comes up on <http://localhost:8000>:
 | Health | <http://localhost:8000/healthz> |
 | Interactive docs | <http://localhost:8000/docs> |
 | OpenAPI schema | <http://localhost:8000/api/v1/openapi.json> |
+| Object storage console | <http://localhost:9001> (`minioadmin` / `minioadmin`) |
+
+**Object storage runs locally.** MinIO speaks the S3 API, so the same provider code
+runs against it and against Cloudflare R2 in production. It is not optional scenery:
+without a real bucket the upload is accepted and discarded, and the pipeline then
+fails at download on every recording.
+
+Note that `R2_ENDPOINT_URL` and `R2_PUBLIC_ENDPOINT_URL` differ locally. The API
+reaches MinIO at `minio:9000` on the compose network while the browser can only reach
+`localhost:9000`, and a presigned URL is signed over the host it will be sent to — so
+the difference has to be applied at signing time rather than patched afterwards. In
+production both are R2, and the public one is left unset.
+
+**Without provider keys, the pipeline still runs end to end.** With `ANTHROPIC_API_KEY`
+and `DEEPGRAM_API_KEY` unset, the transcription and LLM providers fall back to fakes:
+a recording is transcribed to a fixture conversation and the note comes back with every
+section filled with an obvious placeholder. That is deliberate — the alternative is a
+checkout that cannot demonstrate its central feature — and production refuses to start
+without the real keys rather than quietly writing fixtures into clinical records.
 
 Migrations run as an explicit step, never on container startup — the same rule the deploy
 pipeline follows, so local and production behave identically:

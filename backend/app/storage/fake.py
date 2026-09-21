@@ -6,12 +6,17 @@ is exercising real logic rather than an expectation about a call.
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from app.storage.base import CompletedPart, PresignedPart
+from app.storage.base import CompletedPart, ObjectNotFoundError, PresignedPart
 
 
 @dataclass
 class FakeStorageProvider:
+    # Bytes a test has placed in the bucket. Uploads are presigned and go
+    # straight to storage, so nothing populates this by itself -- a test that wants
+    # the pipeline to find audio puts it here.
+    objects: dict[str, bytes] = field(default_factory=dict)
     uploads: dict[str, str] = field(default_factory=dict)
     completed: dict[str, list[CompletedPart]] = field(default_factory=dict)
     aborted: list[str] = field(default_factory=list)
@@ -48,3 +53,9 @@ class FakeStorageProvider:
 
     async def delete(self, key: str) -> None:
         self.deleted.append(key)
+        self.objects.pop(key, None)
+
+    async def download(self, key: str, destination: Path) -> None:
+        if key not in self.objects:
+            raise ObjectNotFoundError(key)
+        destination.write_bytes(self.objects[key])

@@ -19,6 +19,13 @@ BASE_ENV = {
     "database_url": "postgresql://u:p@localhost:5432/db",
     "redis_url": "redis://localhost:6379/0",
     "jwt_secret": "x" * 32,
+    # Pinned rather than omitted. `Settings` reads the .env file, so leaving these
+    # out makes the test describe whatever the developer's environment happens to
+    # contain -- which is how it passed for as long as nobody had bucket
+    # credentials configured, and broke the moment somebody did.
+    "r2_endpoint_url": None,
+    "r2_access_key_id": None,
+    "r2_secret_access_key": None,
 }
 
 

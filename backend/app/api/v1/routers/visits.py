@@ -6,8 +6,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.api.deps import CurrentUser, SessionDep
+from app.core.queue import get_job_queue
+from app.jobs.queue import JobQueue
 from app.models import Visit
+from app.repositories.jobs import ProcessingJobRepository
+from app.repositories.notes import NoteRepository
 from app.repositories.visits import VisitRepository
+from app.schemas.processing import VisitProcessingStatus
 from app.schemas.upload import (
     PartsRequest,
     PartsResponse,
@@ -57,6 +62,7 @@ async def get_visit(visit_id: uuid.UUID, user: CurrentUser, session: SessionDep)
 
 
 StorageDep = Annotated[StorageProvider, Depends(get_storage_provider)]
+QueueDep = Annotated[JobQueue, Depends(get_job_queue)]
 
 
 async def _owned_visit(visit_id: uuid.UUID, user_id: uuid.UUID, session: SessionDep) -> Visit:
@@ -113,10 +119,17 @@ async def complete_upload(
     user: CurrentUser,
     session: SessionDep,
     storage: StorageDep,
+    queue: QueueDep,
 ) -> Visit:
+    """Finish the upload and hand the visit to the worker.
+
+    Enqueueing happens here rather than at visit creation: until the object exists
+    in the bucket there is nothing for the pipeline to fetch, and a worker sent
+    after audio that has not arrived yet would fail every time.
+    """
     visit = await _owned_visit(visit_id, user.id, session)
     try:
-        return await UploadService(session, storage).complete(visit, payload)
+        completed = await UploadService(session, storage).complete(visit, payload)
     except UploadStateError as exc:
         # 422 when the request itself is incomplete, 409 when the visit is in the
         # wrong state for the request. Different problems for the client to fix.
@@ -126,3 +139,31 @@ async def complete_upload(
             else status.HTTP_409_CONFLICT
         )
         raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+    await queue.enqueue_visit_processing(completed.id)
+    return completed
+
+
+@router.get("/{visit_id}/status", response_model=VisitProcessingStatus)
+async def visit_status(
+    visit_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> VisitProcessingStatus:
+    """What the capture screen polls while the note is being written.
+
+    Reports the pipeline stage alongside the visit status, because "processing" for
+    twenty minutes and "stuck" look identical to a client that is only told the
+    latter.
+    """
+    visit = await _owned_visit(visit_id, user.id, session)
+    job = await ProcessingJobRepository(session).get_for_visit(visit.id)
+    note = await NoteRepository(session).get_for_visit(visit.id)
+
+    return VisitProcessingStatus(
+        visit_id=visit.id,
+        status=visit.status,
+        stage=job.stage if job else None,
+        job_status=job.status if job else None,
+        attempts=job.attempts if job else 0,
+        error=job.error_message if job else None,
+        note_id=note.id if note else None,
+    )

@@ -28,4 +28,7 @@ export const queryClient = new QueryClient({
  */
 export const queryKeys = {
   health: () => ['health'] as const,
+  // Keyed by visit so two capture screens open at once poll independently, and so
+  // the review screen can invalidate exactly one visit's status once it lands.
+  visitStatus: (visitId: string) => ['visits', visitId, 'status'] as const,
 } as const

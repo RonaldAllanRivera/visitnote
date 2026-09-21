@@ -13,6 +13,47 @@ behind each design decision.
 ## [Unreleased]
 
 ### Added
+- **Phase 4 — pipeline.** Built test-first.
+  - Transcription and LLM providers behind Protocols, with fakes written before the
+    live clients so the interfaces are shaped by what the pipeline needs rather than
+    by an SDK's return type. No vendor type leaves either provider module.
+  - Transcription returns ordered speaker turns, never a flat string. A response with
+    no diarization is an error rather than a single unattributed blob: both note
+    formats quote the patient, and mis-attributing a quote is a fabrication.
+  - The speaker who both opens and dominates a recording is inferred as the
+    caregiver, and only when the margin is clear. An ambiguous transcript is sent
+    with an explicit instruction not to guess, because an unknown speaker costs one
+    flag while a wrong one puts the patient's name on words they never said.
+  - Versioned prompt modules with an explicit registry. A change is a new module, not
+    an edit — every note records the prompt version that produced it, and that record
+    is worthless if the version's text can move underneath it.
+  - Output validated with Pydantic against the active template's own schema, and
+    repaired once with an instruction naming the specific defect. A retry that repeats
+    the original request unchanged is only a second chance at the same mistake.
+  - Flag severity is taken from the template, not from the model. Banned phrases are
+    rejected in the note's own voice but permitted inside quotations, because what the
+    patient actually said is evidence.
+  - One pipeline for both note formats: everything format-specific is read from the
+    `note_templates` row, so a third format is a data change plus a prompt module.
+  - `notes.flags` and the normalized `note_flags` rows are written in one transaction
+    from the same validated objects, with a test that they cannot diverge.
+  - Failures record the stage they failed at and whether they are worth retrying — a
+    file that is not audio will not decode on the third attempt, while a provider
+    timeout might. Exponential backoff, three attempts, then failed with the error on
+    the job row rather than only in the worker's logs.
+  - Per-note cost in Decimal: audio minutes, input and output tokens, computed USD. A
+    model with no configured price records no cost rather than a misleading zero.
+  - Tracing optional by config and a no-op when off, so no call site is conditional.
+    Redaction removes patient content by denylist and keeps everything a regression
+    looks like: prompt version, model, tokens, cost, per-stage latency, flag codes,
+    schema validity, whether a repair was needed.
+  - Status endpoint reporting the pipeline stage, `/ops/jobs` with a failure filter
+    and retry, and a web screen that polls with backoff and stops at a terminal state.
+  - Object storage now runs locally under MinIO. Presigning uses a separately
+    configurable public endpoint, because a presigned URL is signed over the host it
+    will be sent to and the browser and the API do not always reach a bucket by the
+    same name.
+
 - **Phase 3 — capture.** Built test-first.
   - Care recipient records: a pseudonymous label and nothing else. Deactivated rather
     than deleted, because visits reference them and a signed note is a legal record.

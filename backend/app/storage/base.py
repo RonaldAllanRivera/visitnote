@@ -8,11 +8,21 @@ package -- services see only the dataclasses defined here.
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Protocol
 
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+class ObjectNotFoundError(Exception):
+    """The key does not exist in the bucket.
+
+    Raised rather than writing an empty file. An empty file reaches ffmpeg and fails
+    there, which reports a decode failure for what is actually a missing object --
+    the wrong stage, and a much longer diagnosis.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +60,16 @@ class StorageProvider(Protocol):
     async def abort_multipart(self, key: str, upload_id: str) -> None: ...
 
     async def delete(self, key: str) -> None: ...
+
+    async def download(self, key: str, destination: Path) -> None:
+        """Fetch an object to local disk.
+
+        The one direction where bytes pass through the application: the worker has
+        to hold the audio to run ffmpeg over it. Streamed to a file rather than
+        returned as bytes, because a 200MB recording must not land on the heap of a
+        container sharing two cores with the API.
+        """
+        ...
 
 
 @lru_cache

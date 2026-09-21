@@ -48,3 +48,38 @@ class VisitStatus(StrEnum):
     READY = "ready"
     SIGNED = "signed"
     FAILED = "failed"
+
+
+class ReviewStatus(StrEnum):
+    """Where a note sits in an agency's review workflow.
+
+    Separate from the visit's status: a note can be signed by its author and still
+    be waiting on a supervisor, and those are different questions.
+    """
+
+    UNREVIEWED = "unreviewed"
+    NEEDS_CORRECTION = "needs_correction"
+    ACCEPTED = "accepted"
+
+
+class JobStage(StrEnum):
+    """How far the pipeline got.
+
+    Recorded because "it failed" is not actionable and "it failed at transcription"
+    is: the two failures have different causes, different costs, and different fixes.
+    """
+
+    QUEUED = "queued"
+    DOWNLOAD = "download"
+    NORMALIZE = "normalize"
+    TRANSCRIBE = "transcribe"
+    GENERATE = "generate"
+    PERSIST = "persist"
+    COMPLETE = "complete"
+
+
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"

@@ -58,6 +58,16 @@ jobs:
           cache: pip
           cache-dependency-path: backend/pyproject.toml
 
+      - name: Install ffmpeg
+        # Installed explicitly rather than relied on from the runner image. The
+        # pipeline tests skip themselves when ffmpeg is absent, so without this a
+        # runner change would quietly drop coverage of the most important code in
+        # the backend instead of failing.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+
       - name: Install
         run: pip install -e ".[dev]"
 

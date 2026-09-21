@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useNavigate } from 'react-router'
 
 import { api } from '@/api/client'
 import { formatElapsed } from '@/lib/recorderState'
@@ -18,6 +19,7 @@ type CaptureMode = 'live_audio' | 'spoken_recap'
  */
 export function NewVisit() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const recorder = useRecorder()
 
   const [clientId, setClientId] = useState('')
@@ -99,10 +101,14 @@ export function NewVisit() {
       if (completed.error ?? !completed.data) throw new Error('Could not finish the upload')
       return completed.data
     },
-    onSuccess: () => {
+    onSuccess: (visit) => {
       void queryClient.invalidateQueries({ queryKey: ['visits'] })
       recorder.reset()
       setProgress(0)
+      // Completing the upload enqueues the pipeline, so the next thing the user
+      // needs is the screen that says what it is doing -- not a success message on
+      // a form they have finished with.
+      void navigate(`/visits/${visit.id}/processing`)
     },
   })
 
@@ -244,7 +250,7 @@ export function NewVisit() {
           <p role="alert" className="text-sm text-critical">{submit.error.message}</p>
         )}
         {submit.isSuccess && (
-          <p role="status" className="text-sm">Uploaded. Processing begins in the next phase.</p>
+          <p role="status" className="text-sm">Uploaded. Taking you to your note…</p>
         )}
       </div>
     </section>

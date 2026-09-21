@@ -7,6 +7,7 @@ bucket during a test run.
 
 from app.storage.base import (
     CompletedPart,
+    ObjectNotFoundError,
     PresignedPart,
     StorageProvider,
     get_storage_provider,
@@ -16,6 +17,7 @@ from app.storage.fake import FakeStorageProvider
 __all__ = [
     "CompletedPart",
     "FakeStorageProvider",
+    "ObjectNotFoundError",
     "PresignedPart",
     "StorageProvider",
     "get_storage_provider",
