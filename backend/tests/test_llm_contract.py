@@ -45,6 +45,51 @@ VISIT_DETAILS = {
     "end_time": "12:00",
 }
 
+# A generic repeating section, shaped like FDAR's focus entries but not named after
+# it -- this module validates whatever the template declares, and the fixture should
+# not suggest otherwise.
+REPEATING_SECTION_SCHEMA = {
+    "sections": [
+        {
+            "key": "shift_details",
+            "label": "Shift details",
+            "order": 1,
+            "description": "Unit, bed, shift.",
+        },
+        {
+            "key": "focus_entries",
+            "label": "Focus entries",
+            "order": 2,
+            "description": "One entry per focus.",
+            "repeating": True,
+            "fields": [
+                {"key": "focus", "label": "Focus", "order": 1, "description": "The problem."},
+                {"key": "data", "label": "Data", "order": 2, "description": "Findings."},
+                {"key": "action", "label": "Action", "order": 3, "description": "Interventions."},
+                {
+                    "key": "response",
+                    "label": "Response",
+                    "order": 4,
+                    "description": "Patient response.",
+                },
+            ],
+        },
+    ]
+}
+
+REPEATING_SPEC = TemplateSpec.from_schemas(
+    jurisdiction=Jurisdiction.US,
+    note_format=NoteFormat.SHIFT_NOTE,
+    version=1,
+    name="Repeating-section format",
+    requires_diarization=True,
+    section_schema=REPEATING_SECTION_SCHEMA,
+    flag_schema=FLAG_SCHEMA,
+    prompt_version="repeating_v1",
+    llm_provider="anthropic",
+    model_id="test-model",
+)
+
 
 def _payload(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
@@ -74,9 +119,7 @@ def test_a_missing_section_is_rejected_and_named() -> None:
 
 
 def test_an_invented_section_is_rejected_and_named() -> None:
-    payload = _payload(
-        sections={"observations": "x", "handover": None, "vital_signs": "BP 130/80"}
-    )
+    payload = _payload(sections={"observations": "x", "handover": None, "vital_signs": "BP 130/80"})
 
     with pytest.raises(NoteValidationError) as exc:
         validate_output(payload, SPEC)
@@ -164,3 +207,111 @@ def test_the_repair_instruction_is_addressed_to_the_model() -> None:
 def test_the_banned_list_covers_the_phrases_the_specification_names() -> None:
     for phrase in ("doing well", "no issues", "seemed fine", "routine visit"):
         assert phrase in BANNED_PHRASES
+
+
+def _repeating_payload(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "visit_details": dict(VISIT_DETAILS),
+        "sections": {
+            "shift_details": "Ward 3, Bed 4, night shift.",
+            "focus_entries": [
+                {
+                    "focus": "Pain",
+                    "data": "Reports 7/10 on movement.",
+                    "action": "Gave PRN analgesic per order.",
+                    "response": "Rated 3/10 after 30 minutes.",
+                },
+                {
+                    "focus": "Fever",
+                    "data": "Temp 38.6C at 0200.",
+                    "action": "Administered antipyretic per order.",
+                    "response": "Temp 37.4C at 0300.",
+                },
+            ],
+        },
+        "flags": [],
+    }
+    base.update(overrides)
+    return base
+
+
+def test_a_repeating_section_with_well_formed_entries_validates_cleanly() -> None:
+    """Two foci in one shift is exactly what the array shape exists to carry."""
+    note = validate_output(_repeating_payload(), REPEATING_SPEC)
+
+    entries = note.sections["focus_entries"]
+    assert isinstance(entries, list)
+    assert len(entries) == 2
+
+
+def test_a_repeating_entry_missing_a_declared_field_is_rejected_and_named() -> None:
+    """MISSING_RESPONSE can only fire if an omitted key can't slip past validation."""
+    payload = _repeating_payload(
+        sections={
+            "shift_details": "Ward 3, Bed 4, night shift.",
+            "focus_entries": [
+                {
+                    "focus": "Pain",
+                    "data": "Reports 7/10 on movement.",
+                    "action": "Gave PRN analgesic per order.",
+                    # response omitted
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(NoteValidationError) as exc:
+        validate_output(payload, REPEATING_SPEC)
+
+    assert "focus_entries" in exc.value.repair_instruction
+    assert "entry 0" in exc.value.repair_instruction
+    assert "response" in exc.value.repair_instruction
+
+
+def test_a_repeating_entry_with_an_undeclared_key_is_rejected_and_named() -> None:
+    payload = _repeating_payload(
+        sections={
+            "shift_details": "Ward 3, Bed 4, night shift.",
+            "focus_entries": [
+                {
+                    "focus": "Pain",
+                    "data": "Reports 7/10 on movement.",
+                    "action": "Gave PRN analgesic per order.",
+                    "response": "Rated 3/10 after 30 minutes.",
+                    "nurse_initials": "JR",
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(NoteValidationError) as exc:
+        validate_output(payload, REPEATING_SPEC)
+
+    assert "focus_entries" in exc.value.repair_instruction
+    assert "entry 0" in exc.value.repair_instruction
+    assert "nurse_initials" in exc.value.repair_instruction
+
+
+def test_a_repeating_section_sent_as_a_plain_string_is_rejected() -> None:
+    """A model that flattens the foci into prose defeats the whole point of the array."""
+    payload = _repeating_payload(
+        sections={
+            "shift_details": "Ward 3, Bed 4, night shift.",
+            "focus_entries": "Pain: better after PRN. Fever: resolving.",
+        }
+    )
+
+    with pytest.raises(NoteValidationError) as exc:
+        validate_output(payload, REPEATING_SPEC)
+
+    assert "focus_entries" in exc.value.repair_instruction
+
+
+def test_a_non_repeating_section_sent_as_a_list_is_rejected() -> None:
+    """The converse: a flat section must not silently accept an array either."""
+    payload = _payload(sections={"observations": [{"note": "not prose"}], "handover": None})
+
+    with pytest.raises(NoteValidationError) as exc:
+        validate_output(payload, SPEC)
+
+    assert "observations" in exc.value.repair_instruction

@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from app.llm.templates import VISIT_DETAIL_KEYS, TemplateSpec
+from app.llm.templates import VISIT_DETAIL_KEYS, SectionSpec, TemplateSpec
 from app.models.enums import FlagSeverity
 
 # Phrases that are never acceptable in the note's own voice. Each one is a sentence
@@ -56,11 +56,18 @@ class GeneratedFlag(BaseModel):
     severity: FlagSeverity
 
 
+# A section is either a block of prose or, for a repeating group like FDAR's
+# focus entries, a list of entries. FDAR charts one F-D-A-R block per focus and a
+# shift has several, so flattening them into one string would make MISSING_RESPONSE
+# -- an Action with no documented patient Response -- impossible to evaluate per entry.
+SectionValue = str | list[dict[str, str | None]] | None
+
+
 class GeneratedNote(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     visit_details: dict[str, str | None]
-    sections: dict[str, str | None]
+    sections: dict[str, SectionValue]
     flags: list[GeneratedFlag]
 
 
@@ -81,6 +88,7 @@ def validate_output(payload: dict[str, Any], spec: TemplateSpec) -> GeneratedNot
         label="visit_details",
     )
     _check_keys(actual=set(note.sections), expected=set(spec.section_keys), label="sections")
+    _check_repeating_sections(note.sections, spec)
     _check_banned_phrases(note.sections)
 
     return note.model_copy(update={"flags": _normalise_flags(note.flags, spec)})
@@ -106,8 +114,62 @@ def _check_keys(*, actual: set[str], expected: set[str], label: str) -> None:
     raise NoteValidationError(" ".join(problems))
 
 
-def _check_banned_phrases(sections: dict[str, str | None]) -> None:
+def _check_repeating_sections(sections: dict[str, SectionValue], spec: TemplateSpec) -> None:
+    """A repeating section (FDAR's focus entries) needs per-entry validation.
+
+    `_check_keys` above only confirms the top-level section keys match the template;
+    it cannot see inside a list. Without this, a model returning `[{"focus": "pain"}]`
+    -- no `data`, `action`, or `response` -- would validate cleanly, and
+    MISSING_RESPONSE exists specifically to catch an Action with no documented
+    Response. A key the model never emits and a response it determined absent must
+    not be indistinguishable.
+    """
+    for section in spec.sections:
+        if section.key not in sections:
+            continue  # a missing or invented key was already rejected by _check_keys
+        value = sections[section.key]
+        if section.repeating:
+            _check_repeating_entries(section, value)
+        elif isinstance(value, list):
+            raise NoteValidationError(
+                f'The "{section.key}" section must be a single value, not a list. '
+                "This note format does not repeat that section."
+            )
+
+
+def _check_repeating_entries(section: SectionSpec, value: SectionValue) -> None:
+    if not isinstance(value, list):
+        raise NoteValidationError(
+            f'The "{section.key}" section must be a list of entries -- one per '
+            f"{section.label.lower()} -- because this note format repeats it."
+        )
+    expected = {field.key for field in section.fields}
+    for index, entry in enumerate(value):
+        actual = set(entry)
+        missing = sorted(expected - actual)
+        unexpected = sorted(actual - expected)
+        if not missing and not unexpected:
+            continue
+
+        problems = []
+        if missing:
+            problems.append(f"is missing required keys: {', '.join(missing)}")
+        if unexpected:
+            problems.append(f"contains keys this section does not declare: {', '.join(unexpected)}")
+        raise NoteValidationError(
+            f'The "{section.key}" section, entry {index}, {"; ".join(problems)}. '
+            f"Every entry needs exactly these keys: {', '.join(sorted(expected))}."
+        )
+
+
+def _check_banned_phrases(sections: dict[str, SectionValue]) -> None:
     for key, text in sections.items():
+        # Repeating sections carry their prose inside each entry's fields, not as the
+        # section value itself; the ban applies to a single block of prose, so a list
+        # here is a shape the ban has no opinion on -- `_check_repeating_sections`
+        # above is what validates it.
+        if not isinstance(text, str):
+            continue
         if not text:
             continue
         unquoted = _QUOTED_SPAN.sub(" ", text).lower()
