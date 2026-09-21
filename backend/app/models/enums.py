@@ -27,3 +27,24 @@ class RoleTitle(StrEnum):
     LPN = "lpn"
     RN = "rn"
     OTHER = "other"
+
+
+class CaptureMode(StrEnum):
+    """How the audio was obtained.
+
+    The distinction is legal, not technical: live_audio records a third party and
+    requires their acknowledgment, spoken_recap is the user dictating afterwards and
+    records nobody else.
+    """
+
+    LIVE_AUDIO = "live_audio"
+    SPOKEN_RECAP = "spoken_recap"
+
+
+class VisitStatus(StrEnum):
+    RECORDING = "recording"
+    UPLOADED = "uploaded"
+    PROCESSING = "processing"
+    READY = "ready"
+    SIGNED = "signed"
+    FAILED = "failed"

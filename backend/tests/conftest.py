@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.db import engine
 from app.core.redis import pool
 from app.main import create_app
+from app.storage import FakeStorageProvider, get_storage_provider
 
 # The app under test runs the real TrustedHostMiddleware, so requests must carry a
 # Host header the application actually trusts. Using a fake host here would either
@@ -69,6 +70,11 @@ async def client() -> AsyncGenerator[AsyncClient]:
     production.
     """
     app = create_app()
+    # Storage is faked for the whole suite. A test that silently reached a real
+    # bucket would be slow, flaky, and would leave objects behind.
+    storage = FakeStorageProvider()
+    app.dependency_overrides[get_storage_provider] = lambda: storage
+
     async with (
         AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL) as ac,
         app.router.lifespan_context(app),

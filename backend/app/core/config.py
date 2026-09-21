@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     login_failure_window_seconds: int = 900
     login_lockout_seconds: int = 900
 
+    # Object storage. Absent locally, where the fake provider is used instead.
+    r2_bucket: str = "visitnote-dev"
+    r2_endpoint_url: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    # Short-lived by design: a leaked URL stops working quickly, and the client
+    # requests a fresh one when resuming.
+    presigned_url_ttl_seconds: int = 900
+
     # Google sign-in. Absent in local development, where the feature simply reports
     # itself unconfigured rather than failing in a confusing way.
     google_client_id: str | None = None
