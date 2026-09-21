@@ -278,3 +278,70 @@ async def test_changing_jurisdiction_does_not_rewrite_existing_visits(
 
     unchanged = (await client.get(f"/api/v1/visits/{visit['id']}", headers=headers)).json()
     assert unchanged["jurisdiction"] == "PH"
+
+
+# -- prohibited capture modes -----------------------------------------------------
+
+
+async def test_a_ph_user_cannot_open_a_live_recording(client: AsyncClient) -> None:
+    """RA 4200 requires all-party consent, with criminal liability.
+
+    A ward holds twenty to forty patients, their families, and other staff. Consent
+    from all parties is not obtainable, and a checkbox does not obtain it on a
+    bystander's behalf. Rejected by the API, not hidden in the UI.
+    """
+    headers = await _account(client, timezone="Asia/Manila")
+    response = await client.post(
+        "/api/v1/visits",
+        headers=headers,
+        json=_payload(
+            await _client_record(client, headers),
+            capture_mode="live_audio",
+            consent_acknowledged=True,
+        ),
+    )
+    assert response.status_code == 422
+    assert "RA 4200" in response.json()["detail"]
+
+
+async def test_a_ph_user_can_still_dictate_a_spoken_recap(client: AsyncClient) -> None:
+    """The PH product is a spoken-recap product, and that path stays open."""
+    headers = await _account(client, timezone="Asia/Manila")
+    visit = await _create(client, headers, _payload(await _client_record(client, headers)))
+    assert visit["capture_mode"] == "spoken_recap"
+
+
+async def test_a_us_user_may_still_open_a_live_recording(client: AsyncClient) -> None:
+    headers = await _account(client, timezone="America/Los_Angeles")
+    visit = await _create(
+        client,
+        headers,
+        _payload(
+            await _client_record(client, headers),
+            capture_mode="live_audio",
+            consent_acknowledged=True,
+        ),
+    )
+    assert visit["capture_mode"] == "live_audio"
+
+
+async def test_replaying_a_key_returns_the_existing_visit_even_for_a_now_prohibited_mode(
+    client: AsyncClient,
+) -> None:
+    """The prohibited-mode check guards creation, not retrieval.
+
+    The idempotency lookup runs first, so a replayed key still returns the visit that
+    was already created even when the retried payload's capture_mode would itself be
+    rejected for this user's jurisdiction.
+    """
+    headers = await _account(client, timezone="Asia/Manila")
+    payload = _payload(await _client_record(client, headers))
+    first = await _create(client, headers, payload)
+
+    replay = await client.post(
+        "/api/v1/visits",
+        headers=headers,
+        json={**payload, "capture_mode": "live_audio", "consent_acknowledged": True},
+    )
+    assert replay.status_code in (200, 201)
+    assert replay.json()["id"] == first["id"]

@@ -6,10 +6,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ConsentLog, User, Visit
-from app.models.enums import NoteFormat
+from app.models.enums import CaptureMode, Jurisdiction, NoteFormat
 from app.repositories.clients import ClientRepository
 from app.repositories.visits import VisitRepository
 from app.schemas.visit import VisitCreate
+
+# Jurisdictions in which recording a third party is not lawfully obtainable, and the
+# statute that says so. Data rather than a branch, so adding a jurisdiction is a row.
+PROHIBITED_CAPTURE_MODES: dict[Jurisdiction, tuple[CaptureMode, str]] = {
+    Jurisdiction.PH: (
+        CaptureMode.LIVE_AUDIO,
+        "RA 4200 (Anti-Wiretapping Act) requires the consent of all parties to a "
+        "private communication. Record a spoken recap instead.",
+    ),
+}
 
 
 class UnknownClientError(Exception):
@@ -17,6 +27,18 @@ class UnknownClientError(Exception):
 
     One error for both, so a caller cannot probe for record ids they do not own.
     """
+
+
+class ProhibitedCaptureModeError(Exception):
+    """The capture mode is unlawful in this user's jurisdiction.
+
+    Enforced here rather than in the schema, because the rule depends on the
+    authenticated user and a Pydantic model validator cannot see them.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 @dataclass(slots=True)
@@ -34,6 +56,10 @@ class VisitService:
         existing = await visits.get_by_idempotency_key(user.id, payload.idempotency_key)
         if existing is not None:
             return existing, False
+
+        prohibited = PROHIBITED_CAPTURE_MODES.get(user.jurisdiction)
+        if prohibited is not None and payload.capture_mode is prohibited[0]:
+            raise ProhibitedCaptureModeError(prohibited[1])
 
         care_recipient = await ClientRepository(self.session).get_for_owner(
             payload.client_id, user.id
