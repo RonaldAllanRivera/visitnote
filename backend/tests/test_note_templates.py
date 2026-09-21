@@ -140,19 +140,31 @@ async def test_the_same_format_can_exist_in_two_jurisdictions(
     session.add(template)
     await session.commit()
 
-    both = (
-        (
-            await session.execute(
-                select(NoteTemplate).where(NoteTemplate.format == NoteFormat.SOAPIE)
+    # This test commits against the real, shared database (see conftest -- there is
+    # no per-test rollback or truncation), so the PH row above is already durable. If
+    # the assertion below fails, the row must still be removed or it poisons every
+    # later run -- and worse than the sibling `a_format_from_the_future` case, a
+    # stray PH SOAPIE row makes any later `.scalar_one()` filtered on
+    # `format == SOAPIE` raise `MultipleResultsFound` instead of just returning a
+    # wrong row. rollback() first clears whatever transaction state the try block
+    # left behind, so the cleanup DELETE always runs in a fresh transaction.
+    try:
+        both = (
+            (
+                await session.execute(
+                    select(NoteTemplate).where(NoteTemplate.format == NoteFormat.SOAPIE)
+                )
             )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
-    assert {t.jurisdiction for t in both} == {Jurisdiction.US, Jurisdiction.PH}
-
-    await session.delete(template)
-    await session.commit()
+        assert {t.jurisdiction for t in both} == {Jurisdiction.US, Jurisdiction.PH}
+    finally:
+        await session.rollback()
+        await session.execute(
+            sa.text("DELETE FROM note_templates WHERE prompt_version = 'ph_soapie_v1'")
+        )
+        await session.commit()
 
 
 async def test_us_templates_require_diarization_and_ph_templates_do_not(

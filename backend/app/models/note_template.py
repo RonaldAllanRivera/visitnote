@@ -19,7 +19,18 @@ from app.models.enums import note_format_column as _format_column
 class NoteTemplate(UUIDPrimaryKey, Timestamped, Base):
     __tablename__ = "note_templates"
     __table_args__ = (
-        UniqueConstraint("jurisdiction", "format", "version", name="jurisdiction_format_version"),
+        # Spelled out in full rather than left short: this project's `uq` naming
+        # convention (app/models/base.py) interpolates the constraint's columns, not
+        # `%(constraint_name)s`, so an explicit name here is used verbatim and never
+        # gets the `uq_note_templates_` prefix applied. A short name would silently
+        # disagree with what migration 0009 actually created in the database, and
+        # `alembic revision --autogenerate` would propose dropping and recreating it.
+        UniqueConstraint(
+            "jurisdiction",
+            "format",
+            "version",
+            name="uq_note_templates_jurisdiction_format_version",
+        ),
         Index("ix_note_templates_jurisdiction_format", "jurisdiction", "format"),
     )
 
