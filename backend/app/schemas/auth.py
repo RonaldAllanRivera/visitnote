@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo, available_timezones
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.models.enums import NoteFormat, RoleTitle
+from app.models.enums import Jurisdiction, NoteFormat, RoleTitle
 
 # Length beats composition rules. NIST withdrew the character-class requirements
 # because they push people toward predictable substitutions; length is what actually
@@ -57,6 +57,7 @@ class UserProfile(BaseModel):
     role_title: RoleTitle | None
     default_note_format: NoteFormat | None
     timezone: str
+    jurisdiction: Jurisdiction
     is_staff: bool
 
 
@@ -87,6 +88,7 @@ class OnboardingRequest(BaseModel):
     role_title: RoleTitle | None = None
     default_note_format: NoteFormat | None = None
     timezone: str | None = Field(default=None, max_length=64)
+    jurisdiction: Jurisdiction | None = None
 
     @field_validator("timezone")
     @classmethod

@@ -27,6 +27,19 @@ async def _auth_headers(client: AsyncClient) -> dict[str, str]:
     return {"Authorization": f"Bearer {body['access_token']}"}
 
 
+async def _account(client: AsyncClient, timezone: str = "America/Los_Angeles") -> dict[str, str]:
+    body = (
+        await client.post(
+            "/api/v1/auth/register", json={"email": _email(), "password": PASSWORD}
+        )
+    ).json()
+    headers = {"Authorization": f"Bearer {body['access_token']}"}
+    await client.patch(
+        "/api/v1/auth/me", headers=headers, json={"role_title": "rn", "timezone": timezone}
+    )
+    return headers
+
+
 async def test_onboarding_stores_the_profile(client: AsyncClient) -> None:
     headers = await _auth_headers(client)
     response = await client.patch(
@@ -111,3 +124,41 @@ async def test_a_user_cannot_make_themselves_staff(client: AsyncClient) -> None:
     assert response.status_code in (200, 422)
     if response.status_code == 200:
         assert response.json()["is_staff"] is False
+
+
+async def test_onboarding_derives_jurisdiction_from_the_timezone(
+    client: AsyncClient,
+) -> None:
+    headers = await _account(client)
+    body = (
+        await client.patch(
+            "/api/v1/auth/me",
+            headers=headers,
+            json={"role_title": "rn", "timezone": "Asia/Manila"},
+        )
+    ).json()
+    assert body["jurisdiction"] == "PH"
+
+
+async def test_an_explicit_jurisdiction_overrides_the_derived_one(
+    client: AsyncClient,
+) -> None:
+    """A Filipino nurse working a US telehealth contract is a real case.
+
+    The derivation is a default, not a determination.
+    """
+    headers = await _account(client)
+    body = (
+        await client.patch(
+            "/api/v1/auth/me",
+            headers=headers,
+            json={"timezone": "Asia/Manila", "jurisdiction": "US"},
+        )
+    ).json()
+    assert body["jurisdiction"] == "US"
+
+
+async def test_a_new_account_defaults_to_us_before_onboarding(client: AsyncClient) -> None:
+    headers = await _account(client)
+    body = (await client.get("/api/v1/auth/me", headers=headers)).json()
+    assert body["jurisdiction"] == "US"

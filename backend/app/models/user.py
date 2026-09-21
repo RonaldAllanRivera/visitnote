@@ -4,7 +4,7 @@ from sqlalchemy import Boolean, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, Timestamped, UUIDPrimaryKey
-from app.models.enums import NoteFormat, RoleTitle
+from app.models.enums import Jurisdiction, NoteFormat, RoleTitle, jurisdiction_column
 
 
 class User(UUIDPrimaryKey, Timestamped, Base):
@@ -32,6 +32,16 @@ class User(UUIDPrimaryKey, Timestamped, Base):
 
     # IANA zone. Every visit this user captures inherits it, and notes render in it.
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+
+    # Selects the note templates available, the capture modes permitted, the privacy
+    # regime named in the UI, and the currency shown. Defaulted from the timezone at
+    # onboarding and editable, because the derivation is a default, not a determination.
+    jurisdiction: Mapped[Jurisdiction] = mapped_column(
+        jurisdiction_column(),
+        nullable=False,
+        default=Jurisdiction.US,
+        server_default="US",
+    )
 
     is_staff: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Demo accounts are rejected on every write path, server side. Hiding the buttons

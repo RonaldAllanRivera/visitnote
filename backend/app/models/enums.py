@@ -6,6 +6,8 @@ against values arriving from the API, the database, and eval fixtures alike.
 
 from enum import StrEnum
 
+from sqlalchemy import Enum
+
 
 class NoteFormat(StrEnum):
     SHIFT_NOTE = "shift_note"
@@ -83,3 +85,31 @@ class JobStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+class Jurisdiction(StrEnum):
+    """Which regulatory regime a user, visit, and note template belong to.
+
+    Stored as CHAR(2) with a check constraint rather than a Postgres ENUM, because
+    the set grows and ALTER TYPE cannot run inside a transaction block.
+    """
+
+    US = "US"
+    PH = "PH"
+
+
+def jurisdiction_column() -> Enum:
+    """Jurisdiction as a VARCHAR that still round-trips to the Python enum.
+
+    `native_enum=False` emits VARCHAR instead of a Postgres ENUM; `create_constraint=False`
+    leaves the DB-level check to the migration, which owns it. Without this, a bare String
+    column typed `Mapped[Jurisdiction]` loads back as `str` and every `is` comparison
+    silently fails while `==` still passes.
+    """
+    return Enum(
+        Jurisdiction,
+        native_enum=False,
+        create_constraint=False,
+        length=2,
+        values_callable=lambda e: [m.value for m in e],
+    )

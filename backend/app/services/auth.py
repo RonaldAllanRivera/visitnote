@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.jurisdiction import jurisdiction_for_timezone
 from app.core.security import create_access_token, hash_password, needs_rehash, verify_password
 from app.models import User
 from app.repositories.users import UserRepository
@@ -109,6 +110,12 @@ class AuthService:
             user.full_name = payload.full_name
         if payload.timezone is not None:
             user.timezone = payload.timezone
+            # Derive unless the user says otherwise, so onboarding asks one question
+            # instead of two. The explicit field below still wins.
+            if payload.jurisdiction is None:
+                user.jurisdiction = jurisdiction_for_timezone(payload.timezone)
+        if payload.jurisdiction is not None:
+            user.jurisdiction = payload.jurisdiction
         if payload.role_title is not None:
             user.role_title = payload.role_title
             # Derive the format from the role unless the user overrides it, so an RN
