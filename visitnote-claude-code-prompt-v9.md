@@ -161,8 +161,11 @@ reporting incoherent. One format, two jurisdictions, two `note_templates` rows.
 A template is resolved by `(jurisdiction, format)` to the row with `is_active = true`
 and the highest `version`. `users.jurisdiction` is captured at onboarding, defaulted
 from the user's IANA timezone (`Asia/Manila` → `PH`, US zones → `US`) and editable.
-Every note records the template id that produced it, so a note's jurisdiction is a
-historical fact rather than a join through the user's current setting.
+Resolution reads `visits.jurisdiction`, never the user's current setting, so a note's
+jurisdiction is fixed at capture time. Provenance is carried by the `prompt_version`,
+`provider` and `model_id` already stored on every note; whether `notes` should also hold
+a `note_template_id` foreign key is a Phase 5 question, where the editor needs the
+section schema anyway.
 
 ---
 
@@ -562,13 +565,18 @@ Additive, pre-launch, no data loss. Four changes:
 
 1. **`note_templates.jurisdiction`** — `CHAR(2) NOT NULL`, check constraint
    `IN ('US','PH')`. Existing rows backfill to `'US'`.
-2. **`note_format` moves off the Postgres ENUM.** `note_templates.format` and
-   `users.default_note_format` become `VARCHAR(32)`, and the `note_format` ENUM type is
-   dropped. `NoteFormat` remains a Python `StrEnum` for the known set.
+2. **`note_format` moves off the Postgres ENUM.** Three columns reference the type —
+   `note_templates.format`, `users.default_note_format` and `visits.note_format` — and
+   all three become `VARCHAR(32)` before the `note_format` type is dropped. `NoteFormat`
+   remains a Python `StrEnum` for the known set.
 3. **Unique constraint re-keyed** from `(format, version)` to
    `(jurisdiction, format, version)`, with the index on `(jurisdiction, format)`.
 4. **`users.jurisdiction`** — `CHAR(2) NOT NULL`, same check constraint, defaulted from
    the user's IANA timezone at onboarding.
+5. **`visits.jurisdiction`** — `CHAR(2) NOT NULL`, copied from the user at visit
+   creation. This mirrors `visits.timezone`, and for the same reason: a user who
+   changes jurisdiction must not change which template resolves for visits they
+   captured before the change.
 
 Also on `note_templates`: **`requires_diarization BOOLEAN NOT NULL`** (true for US
 rows, false for PH).
@@ -595,7 +603,8 @@ answer to the interview question about it.
 - **note_templates**: **jurisdiction**, format, version, name, section_schema JSONB,
   flag_schema JSONB, **requires_diarization**, prompt_version, llm_provider, model_id,
   is_active
-- **notes**: visit_id, note_template_id, sections JSONB, flags JSONB, version,
+- **visits**: user_id, client_id, **jurisdiction**, note_format, capture_mode, status, timezone, audio_key, idempotency_key
+- **notes**: visit_id, sections JSONB, flags JSONB, version,
   signed_at, signed_by, prompt_version, provider, model_id
 - **note_flags**: note_id, code, severity, section — the analytics axis
 - **eval_runs**: **jurisdiction**, template format, prompt_version, provider, model_id,
