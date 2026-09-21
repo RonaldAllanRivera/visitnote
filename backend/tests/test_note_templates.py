@@ -80,15 +80,29 @@ async def test_a_new_format_value_needs_no_type_alteration(session: AsyncSession
     )
     await session.commit()
 
-    stored = (
+    # This test commits against the real, shared database (see conftest -- there is
+    # no per-test rollback or truncation). The INSERT above is already durable, so if
+    # the assertion below fails -- or anything else raises before the DELETE runs --
+    # the row must still be removed, or it poisons every later run: it breaks the
+    # exact-set assertion in test_both_formats_are_seeded_and_active on every
+    # subsequent test session. The rollback() clears whatever transaction state the
+    # try block left behind (a failed assertion leaves a clean, still-usable
+    # transaction; a DBAPI error would leave an aborted one) so the cleanup DELETE
+    # always runs in a fresh transaction rather than risking "current transaction is
+    # aborted" on top of the original failure.
+    try:
+        stored = (
+            await session.execute(
+                sa.text("SELECT format FROM note_templates WHERE prompt_version = 'future_v1'")
+            )
+        ).scalar_one()
+        assert stored == "a_format_from_the_future"
+    finally:
+        await session.rollback()
         await session.execute(
-            sa.text("SELECT format FROM note_templates WHERE prompt_version = 'future_v1'")
+            sa.text("DELETE FROM note_templates WHERE prompt_version = 'future_v1'")
         )
-    ).scalar_one()
-    assert stored == "a_format_from_the_future"
-
-    await session.execute(sa.text("DELETE FROM note_templates WHERE prompt_version = 'future_v1'"))
-    await session.commit()
+        await session.commit()
 
 
 async def test_the_note_format_enum_type_is_gone(session: AsyncSession) -> None:
