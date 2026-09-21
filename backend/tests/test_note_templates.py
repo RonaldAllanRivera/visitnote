@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import NoteFormat, NoteTemplate
+from app.models.enums import Jurisdiction
 
 
 async def test_both_formats_are_seeded_and_active(session: AsyncSession) -> None:
@@ -69,11 +70,11 @@ async def test_a_new_format_value_needs_no_type_alteration(session: AsyncSession
         sa.text(
             """
             INSERT INTO note_templates (
-                format, version, name, section_schema, flag_schema,
-                prompt_version, llm_provider, model_id, is_active
+                jurisdiction, format, version, name, section_schema, flag_schema,
+                requires_diarization, prompt_version, llm_provider, model_id, is_active
             ) VALUES (
-                'a_format_from_the_future', 1, 'Future', '{"sections": []}'::jsonb,
-                '{"flags": []}'::jsonb, 'future_v1', 'anthropic', 'test-model', false
+                'PH', 'a_format_from_the_future', 1, 'Future', '{"sections": []}'::jsonb,
+                '{"flags": []}'::jsonb, false, 'future_v1', 'anthropic', 'test-model', false
             )
             """
         )
@@ -112,3 +113,63 @@ async def test_the_note_format_enum_type_is_gone(session: AsyncSession) -> None:
         )
     ).scalar_one()
     assert exists is False
+
+
+async def test_the_same_format_can_exist_in_two_jurisdictions(
+    session: AsyncSession,
+) -> None:
+    """The constraint that makes PH SOAPIE possible.
+
+    Filipino nurses chart SOAPIE too, but PH SOAPIE must not flag homebound status.
+    Same format, different flag schema, two rows -- which the old (format, version)
+    unique constraint forbade.
+    """
+    template = NoteTemplate(
+        jurisdiction=Jurisdiction.PH,
+        format=NoteFormat.SOAPIE,
+        version=1,
+        name="PH Skilled Nursing Note",
+        section_schema={"sections": []},
+        flag_schema={"flags": []},
+        requires_diarization=False,
+        prompt_version="ph_soapie_v1",
+        llm_provider="anthropic",
+        model_id="test-model",
+        is_active=False,
+    )
+    session.add(template)
+    await session.commit()
+
+    both = (
+        (
+            await session.execute(
+                select(NoteTemplate).where(NoteTemplate.format == NoteFormat.SOAPIE)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {t.jurisdiction for t in both} == {Jurisdiction.US, Jurisdiction.PH}
+
+    await session.delete(template)
+    await session.commit()
+
+
+async def test_us_templates_require_diarization_and_ph_templates_do_not(
+    session: AsyncSession,
+) -> None:
+    """Diarization is a property of the template, not of the pipeline.
+
+    A US home visit has two to four speakers and a mis-attributed quote is a
+    fabrication. A PH spoken recap has one speaker, so paying for diarization on a
+    monologue buys nothing.
+    """
+    us_soapie = (
+        await session.execute(
+            select(NoteTemplate).where(
+                NoteTemplate.jurisdiction == Jurisdiction.US,
+                NoteTemplate.format == NoteFormat.SOAPIE,
+            )
+        )
+    ).scalar_one()
+    assert us_soapie.requires_diarization is True
