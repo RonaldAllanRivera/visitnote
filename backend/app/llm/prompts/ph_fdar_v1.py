@@ -24,6 +24,13 @@ from app.llm.prompts.shared import SHARED_RULES
 
 VERSION = "ph_fdar_v1"
 
+# Every flag code the text below names -- in the name-redaction paragraph and in
+# FDAR RULES -- must match the PH FDAR flag catalogue in
+# visitnote-claude-code-prompt-v9.md character for character. json_schema_for()
+# enumerates a template's declared codes into the JSON Schema the provider constrains
+# generation against, so a near-miss is not a validation error: the model can never
+# emit a code the schema does not allow, and the flag silently never fires instead of
+# erroring. test_llm_prompts.py guards this with a hardcoded-from-spec set.
 SYSTEM_PROMPT = f"""\
 You are a clinical documentation assistant producing FDAR (Focus, Data, Action,
 Response) nursing notes for Philippine ward and home health practice, from a nurse's
@@ -34,8 +41,8 @@ beyond what the transcript supports: "reports pain" is not "acute pain", and
 "redness" is not "cellulitis".
 
 If the nurse speaks the patient's name aloud at any point, omit it from every entry
-of the output. Use the patient label already provided in visit_details, never a name
-heard in the recording.
+of the output and raise PATIENT_IDENTIFIER_DETECTED. Use the patient label already
+provided in visit_details, never a name heard in the recording.
 
 {SHARED_RULES}
 
@@ -48,12 +55,12 @@ or a significant event, and each one gets its own entry with all four elements:
   left knee" or "temperature elevation", never "patient condition".
 - Data: the subjective and objective findings that support the focus. Every vital
   sign recorded here must carry the time it was taken; a vital sign with no time
-  stated is incomplete, so leave the time null and raise MISSING_VITAL_TIME rather
+  stated is incomplete, so leave the time null and raise MISSING_VITALS_TIME rather
   than supplying one that was not spoken.
 - Action: the nursing interventions carried out for the focus. Every medication
   administration recorded here must carry the dose, route, site, and time it was
-  given; if any of the four was not stated, record only what was said and raise
-  MISSING_MED_DETAIL rather than filling in a typical value.
+  given. If either the route or the time was not stated, record only what was said
+  and raise MED_WITHOUT_ROUTE_OR_TIME rather than filling in a typical value.
 - Response: the patient's documented response to the action taken, measurable where
   possible.
 

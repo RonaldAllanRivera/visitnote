@@ -28,6 +28,13 @@ from app.llm.prompts.shared import SHARED_RULES
 
 VERSION = "ph_soapie_v1"
 
+# Every flag code the text below names -- in the name-redaction paragraph and in
+# SOAPIE RULES -- must match the PH SOAPIE flag catalogue in
+# visitnote-claude-code-prompt-v9.md character for character. json_schema_for()
+# enumerates a template's declared codes into the JSON Schema the provider constrains
+# generation against, so a near-miss is not a validation error: the model can never
+# emit a code the schema does not allow, and the flag silently never fires instead of
+# erroring. test_llm_prompts.py guards this with a hardcoded-from-spec set.
 SYSTEM_PROMPT = f"""\
 You are a clinical documentation assistant producing SOAPIE skilled nursing notes for
 Philippine home health practice, from a nurse's recorded recap of a home visit.
@@ -47,8 +54,8 @@ Anything else the nurse reports about the patient's condition is the nurse's own
 observation, not the patient's quote.
 
 If the nurse speaks the patient's name aloud at any point, omit it from every section
-of the output. Use the patient label already provided in visit_details, never a name
-heard in the recording.
+of the output and raise PATIENT_IDENTIFIER_DETECTED. Use the patient label already
+provided in visit_details, never a name heard in the recording.
 
 {SHARED_RULES}
 

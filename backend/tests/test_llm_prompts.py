@@ -5,6 +5,8 @@ makes patient quotes attributable; telling it *wrongly* makes every quote in the
 a fabrication. So the rule errs towards "unknown", and the prompt says so out loud.
 """
 
+import re
+
 import pytest
 
 from app.llm.prompts import (
@@ -173,3 +175,85 @@ def test_every_ph_prompt_carries_the_shared_rules() -> None:
     """The no-fabrication rules are not per-format and must not be re-stated per format."""
     for version in ("ph_soapie_v1", "ph_fdar_v1"):
         assert SHARED_RULES in get_prompt(version).system_prompt
+
+
+# -- Flag-code drift guard ---------------------------------------------------
+#
+# json_schema_for() (app/llm/templates.py) turns a template's declared flag codes
+# into a JSON Schema enum that constrains generation. A prompt naming a code outside
+# that enum is not a validation error at generation time -- the model can never emit
+# a token the schema forbids, so the flag simply never fires, silently. A misspelled
+# or borrowed code is therefore not a typo, it is a flag that is permanently dead on
+# arrival. This test is the cheapest possible guard against that failure class.
+#
+# The expected sets below are hardcoded from visitnote-claude-code-prompt-v9.md's
+# Note Formats section (the PH SOAPIE and PH FDAR flag lists), which is the binding
+# authority Task 9 seeds `flag_schema` from. They are hardcoded rather than read from
+# the database because Task 9 has not seeded the PH template rows yet -- this test
+# exists precisely so it is already true once that seeding lands.
+
+_FLAG_TOKEN = re.compile(r"[A-Z][A-Z_]{5,}")
+
+# Words that match the flag-token shape but are not flag codes -- unavoidable in a
+# format's own name appearing in its prompt's prose.
+_NOT_A_FLAG = {"SOAPIE"}
+
+# PH SOAPIE retains every US SOAPIE flag except the three CMS-specific ones dropped
+# with Homebound status (MISSING_HOMEBOUND, MISSING_NECESSITY_RATIONALE,
+# MISSING_POC_LINK), per the spec's "everything else is retained".
+_PH_SOAPIE_FLAGS = {
+    "MISSING_VITALS",
+    "MISSING_VISIT_TIMES",
+    "MISSING_SKILLED_SERVICE",
+    "UNREPORTED_CHANGE",
+    "PATIENT_IDENTIFIER_DETECTED",
+    "MISSING_RESPONSE",
+    "MISSING_MED_REVIEW",
+    "MISSING_NEXT_VISIT_PLAN",
+    "MISSING_COORDINATION",
+    "VAGUE_LANGUAGE",
+    "UNATTRIBUTED_STATEMENT",
+    "MISSING_EDUCATION_RESPONSE",
+    "MISSING_PAIN_ASSESSMENT",
+}
+
+_PH_FDAR_FLAGS = {
+    "MISSING_SHIFT_TIMES",
+    "MISSING_FOCUS",
+    "MISSING_RESPONSE",
+    "MED_WITHOUT_ROUTE_OR_TIME",
+    "PRN_WITHOUT_RESPONSE",
+    "UNREPORTED_CHANGE",
+    "PATIENT_IDENTIFIER_DETECTED",
+    "MISSING_VITALS_TIME",
+    "MISSING_INTAKE_OUTPUT",
+    "PAIN_NOT_REASSESSED",
+    "ORDER_NOT_ACKNOWLEDGED",
+    "MISSING_ENDORSEMENT",
+    "VAGUE_LANGUAGE",
+    "MISSING_EDUCATION_RESPONSE",
+    # NOT in the spec's PH FDAR list -- the spec's own rationale is that a dictated
+    # recap has one speaker, so there is nothing to attribute. But SHARED_RULES
+    # (embedded verbatim in every prompt, ph_fdar_v1 included -- required by this
+    # module's own carries-the-shared-rules test above) raises this flag
+    # unconditionally whenever a statement's speaker cannot be determined, so the
+    # token is structurally present in this prompt's text regardless of the spec's
+    # per-format list. Allow-listed here as a known, reported spec/architecture
+    # inconsistency (see the task-8 fix-round report), not a silent workaround: if
+    # Task 9 seeds PH FDAR's flag_schema exactly per the spec's list (omitting this
+    # code), the enum will reject the one instruction SHARED_RULES gives every
+    # format unconditionally.
+    "UNATTRIBUTED_STATEMENT",
+}
+
+_EXPECTED_FLAGS_BY_VERSION = {
+    "ph_soapie_v1": _PH_SOAPIE_FLAGS,
+    "ph_fdar_v1": _PH_FDAR_FLAGS,
+}
+
+
+def test_ph_prompts_name_only_flag_codes_their_template_will_declare() -> None:
+    for version, expected in _EXPECTED_FLAGS_BY_VERSION.items():
+        tokens = set(_FLAG_TOKEN.findall(get_prompt(version).system_prompt)) - _NOT_A_FLAG
+        undeclared = tokens - expected
+        assert not undeclared, f"{version} names flag code(s) outside its spec set: {undeclared}"
