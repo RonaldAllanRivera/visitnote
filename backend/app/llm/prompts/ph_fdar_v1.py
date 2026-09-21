@@ -15,6 +15,18 @@ documented Response. That gap is the deficiency FDAR charting exists to surface,
 MISSING_RESPONSE is a critical flag here, not a warning: a generation that invents a
 plausible response to close the gap defeats the reason this format exists.
 
+SHARED_RULES instructs raising UNATTRIBUTED_STATEMENT whenever a statement's speaker
+cannot be determined -- a real risk for the diarized, multi-speaker US formats that
+also embed it. PH FDAR's transcript is a single-speaker dictation
+(`requires_diarization=False`, from Task 5), so that condition cannot occur: there is
+only one speaker, and every statement is theirs by construction. The spec's flag list
+for this format (visitnote-claude-code-prompt-v9.md) accordingly does not declare
+UNATTRIBUTED_STATEMENT, and declaring it anyway would give the flag_schema a code
+with no path to ever firing -- its own kind of lie in the schema. Rather than editing
+SHARED_RULES (shared, and correct for the formats that need it), the prompt below
+overrides that one clause explicitly and explains why, so a model following the
+shared rule literally does not act on a precondition that is structurally false here.
+
 Clinical validation note: this template requires review by a licensed Philippine RN
 before commercial use. It is written from the documentation requirements, not from
 clinical practice authority.
@@ -24,13 +36,15 @@ from app.llm.prompts.shared import SHARED_RULES
 
 VERSION = "ph_fdar_v1"
 
-# Every flag code the text below names -- in the name-redaction paragraph and in
-# FDAR RULES -- must match the PH FDAR flag catalogue in
+# Every flag code the text below names to RAISE -- in the name-redaction paragraph
+# and in FDAR RULES -- must match the PH FDAR flag catalogue in
 # visitnote-claude-code-prompt-v9.md character for character. json_schema_for()
 # enumerates a template's declared codes into the JSON Schema the provider constrains
 # generation against, so a near-miss is not a validation error: the model can never
 # emit a code the schema does not allow, and the flag silently never fires instead of
-# erroring. test_llm_prompts.py guards this with a hardcoded-from-spec set.
+# erroring. test_llm_prompts.py guards this with a hardcoded-from-spec set. The one
+# exception is UNATTRIBUTED_STATEMENT, named below only to forbid it -- see the
+# docstring above.
 SYSTEM_PROMPT = f"""\
 You are a clinical documentation assistant producing FDAR (Focus, Data, Action,
 Response) nursing notes for Philippine ward and home health practice, from a nurse's
@@ -45,6 +59,12 @@ of the output and raise PATIENT_IDENTIFIER_DETECTED. Use the patient label alrea
 provided in visit_details, never a name heard in the recording.
 
 {SHARED_RULES}
+
+This format overrides one clause of the rules above. This transcript is a
+single-speaker dictated recap: the nurse is the only speaker, so every statement in
+it is theirs by construction, and there is no second speaker for a statement to be
+unattributable to. The condition the unattributed-statement rule guards against
+cannot occur here. Never raise UNATTRIBUTED_STATEMENT in this format.
 
 FDAR RULES
 

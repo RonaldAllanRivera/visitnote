@@ -217,6 +217,11 @@ _PH_SOAPIE_FLAGS = {
     "MISSING_PAIN_ASSESSMENT",
 }
 
+# PH FDAR's declared set, exactly as the spec lists it. Does NOT include
+# UNATTRIBUTED_STATEMENT: the spec's own rationale is that a dictated recap has one
+# speaker, so there is nothing to attribute, and Task 9 seeds `flag_schema` from this
+# list as written -- declaring a code the engine has no path to ever raising would be
+# its own kind of lie in the schema.
 _PH_FDAR_FLAGS = {
     "MISSING_SHIFT_TIMES",
     "MISSING_FOCUS",
@@ -232,23 +237,25 @@ _PH_FDAR_FLAGS = {
     "MISSING_ENDORSEMENT",
     "VAGUE_LANGUAGE",
     "MISSING_EDUCATION_RESPONSE",
-    # NOT in the spec's PH FDAR list -- the spec's own rationale is that a dictated
-    # recap has one speaker, so there is nothing to attribute. But SHARED_RULES
-    # (embedded verbatim in every prompt, ph_fdar_v1 included -- required by this
-    # module's own carries-the-shared-rules test above) raises this flag
-    # unconditionally whenever a statement's speaker cannot be determined, so the
-    # token is structurally present in this prompt's text regardless of the spec's
-    # per-format list. Allow-listed here as a known, reported spec/architecture
-    # inconsistency (see the task-8 fix-round report), not a silent workaround: if
-    # Task 9 seeds PH FDAR's flag_schema exactly per the spec's list (omitting this
-    # code), the enum will reject the one instruction SHARED_RULES gives every
-    # format unconditionally.
-    "UNATTRIBUTED_STATEMENT",
 }
+
+# Codes a prompt names only to forbid raising them, never to raise them -- distinct
+# from the declared sets above, which a prompt may legitimately instruct the model to
+# raise. SHARED_RULES (embedded verbatim in every format, required by
+# test_every_ph_prompt_carries_the_shared_rules above) instructs raising
+# UNATTRIBUTED_STATEMENT whenever a statement's speaker cannot be determined. PH
+# FDAR's transcript is a single-speaker dictation, so that condition is structurally
+# impossible there, and ph_fdar_v1.SYSTEM_PROMPT explicitly overrides the shared
+# clause and says why rather than silently inheriting it. The token is still present
+# in the text -- to forbid it -- so it must be accounted for here, but accounting for
+# it as "declared" would hide the fact that PH FDAR's flag_schema (Task 9) correctly
+# omits this code. This is not a workaround for unresolved drift; it is what the
+# override in ph_fdar_v1.py is supposed to produce.
+_PH_FDAR_SUPPRESSED_FLAGS = {"UNATTRIBUTED_STATEMENT"}
 
 _EXPECTED_FLAGS_BY_VERSION = {
     "ph_soapie_v1": _PH_SOAPIE_FLAGS,
-    "ph_fdar_v1": _PH_FDAR_FLAGS,
+    "ph_fdar_v1": _PH_FDAR_FLAGS | _PH_FDAR_SUPPRESSED_FLAGS,
 }
 
 
@@ -257,3 +264,23 @@ def test_ph_prompts_name_only_flag_codes_their_template_will_declare() -> None:
         tokens = set(_FLAG_TOKEN.findall(get_prompt(version).system_prompt)) - _NOT_A_FLAG
         undeclared = tokens - expected
         assert not undeclared, f"{version} names flag code(s) outside its spec set: {undeclared}"
+
+
+def test_ph_fdar_overrides_shared_rules_to_forbid_unattributed_statement() -> None:
+    """Distinguishes 'names to forbid' from 'names to raise' for the one suppressed code.
+
+    The subset check above would pass just as happily whether ph_fdar_v1.py raises
+    UNATTRIBUTED_STATEMENT or forbids it -- both name the token. What makes this
+    format's behaviour correct is the override's actual wording, and that it comes
+    after SHARED_RULES' own "raise it" instruction rather than before -- an override
+    a model reads before the rule it overrides is not reliably an override.
+    """
+    prompt = get_prompt("ph_fdar_v1").system_prompt
+    assert "Never raise UNATTRIBUTED_STATEMENT" in prompt
+    # SHARED_RULES' own instruction is the first mention of the code in the rendered
+    # prompt; the override must come after it to read as overriding rather than being
+    # overridden. Located by the flag code itself, not "raise UNATTRIBUTED_STATEMENT",
+    # because SHARED_RULES wraps a line between the two words.
+    first_mention = prompt.index("UNATTRIBUTED_STATEMENT")
+    override_mention = prompt.index("Never raise UNATTRIBUTED_STATEMENT")
+    assert override_mention > first_mention

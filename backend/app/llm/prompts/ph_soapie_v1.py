@@ -19,6 +19,16 @@ dictates a single-speaker recap after the visit instead of a live recording. The
 below reflect that: a quote is never attributed to the patient unless the nurse's own
 words say the patient said it.
 
+Unlike `ph_fdar_v1`, this module does NOT override SHARED_RULES' instruction to raise
+UNATTRIBUTED_STATEMENT, even though PH SOAPIE capture is single-speaker too
+(`requires_diarization=False`, same as PH FDAR). Confirmed deliberately, not an
+oversight: the spec (visitnote-claude-code-prompt-v9.md) derives PH SOAPIE's flag set
+from US SOAPIE's wholesale -- "everything else is retained" once the three
+CMS-specific codes are dropped -- rather than re-deriving it from PH SOAPIE's own
+capture characteristics the way PH FDAR's flag list was. UNATTRIBUTED_STATEMENT is
+part of "everything else," so it stays declared and the shared instruction to raise
+it is left as-is.
+
 Clinical validation note: this template requires review by a licensed Philippine RN
 before commercial use. It is written from the documentation requirements, not from
 clinical practice authority.
