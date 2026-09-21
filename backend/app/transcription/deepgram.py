@@ -57,6 +57,12 @@ def parse_response(payload: dict[str, Any], *, model_id: str, diarize: bool) -> 
         raise DiarizationUnavailableError(
             "response contained no utterances; diarization did not run"
         )
+    # Normalised once, here, rather than at each use below: `None` and `[]` are
+    # equally "nothing to iterate" for both the turns comprehension and
+    # `_confidence`'s fallback, and a second unguarded use is exactly how a missing
+    # key turns into a `TypeError` deep inside a fallback path instead of a clean
+    # `PipelineError` at the pipeline's `except Exception` boundary.
+    utterances = utterances or []
 
     turns = tuple(
         TranscriptTurn(
@@ -65,7 +71,7 @@ def parse_response(payload: dict[str, Any], *, model_id: str, diarize: bool) -> 
             end_ms=round(float(utterance["end"]) * 1000),
             text=str(utterance.get("transcript", "")).strip(),
         )
-        for utterance in (utterances or [])
+        for utterance in utterances
     )
 
     return Transcription(

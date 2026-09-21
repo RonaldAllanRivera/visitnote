@@ -122,6 +122,29 @@ def test_a_response_without_utterances_is_not_an_error_when_diarization_was_not_
     assert result.speaker_count == 0
 
 
+def test_a_response_without_utterances_or_channel_confidence_does_not_raise_a_type_error() -> None:
+    """The fallback confidence path, not just the turns comprehension, must survive a
+    missing "utterances" key.
+
+    `_confidence` prefers the channel alternative's own `confidence` field, but falls
+    back to averaging per-utterance scores when that field is absent -- by iterating
+    the same `utterances` value the turns comprehension iterates. A payload with
+    neither reaches that fallback with `utterances is None`, which is a `TypeError`
+    if it is not normalised the same way the turns comprehension is.
+    """
+    no_confidence_anywhere = {
+        "metadata": {"duration": 3.0},
+        "results": {
+            "channels": [{"alternatives": [{"transcript": "some text"}]}],
+        },
+    }
+
+    result = parse_response(no_confidence_anywhere, model_id="nova-3", diarize=False)
+
+    assert result.turns == ()
+    assert result.confidence == 0.0
+
+
 def test_a_single_speaker_response_parses_without_raising_under_diarize_false() -> None:
     """The expected shape of a diarize=False call: utterances present, one speaker.
 
