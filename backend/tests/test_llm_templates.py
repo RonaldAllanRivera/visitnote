@@ -107,8 +107,22 @@ def test_the_json_schema_carries_visit_details() -> None:
 
 
 async def test_both_seeded_templates_parse_into_a_spec(session: AsyncSession) -> None:
-    """The seeded rows are the real input; a spec that only parses fixtures is useless."""
-    rows = (await session.execute(select(NoteTemplate))).scalars().all()
+    """The seeded rows are the real input; a spec that only parses fixtures is useless.
+
+    Scoped to US: PH SOAPIE now shares the "soapie" format key, and this test's
+    section-count assertions are specifically about the US shapes (ten sections,
+    homebound status included), so an unscoped query risks `by_format[SOAPIE]`
+    resolving to whichever row the query happens to return last.
+    """
+    rows = (
+        (
+            await session.execute(
+                select(NoteTemplate).where(NoteTemplate.jurisdiction == Jurisdiction.US)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     specs = [TemplateSpec.from_template(row) for row in rows]
 

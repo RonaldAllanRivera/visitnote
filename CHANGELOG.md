@@ -13,6 +13,45 @@ behind each design decision.
 ## [Unreleased]
 
 ### Added
+- **Phase 4b — jurisdiction.** Built test-first, across nine tasks.
+  - `jurisdiction` on users, visits, and note templates, defaulted from the user's
+    IANA timezone at onboarding and copied onto each visit at creation so a later
+    jurisdiction change cannot retroactively change which template a past visit
+    resolves against.
+  - `note_templates` re-keyed from `(format, version)` to
+    `(jurisdiction, format, version)`, so the same format can carry two different
+    flag schemas in two regimes. `note_format` moved off its Postgres ENUM onto
+    `VARCHAR(32)` — the set of formats is now a growing one, and `ALTER TYPE ... ADD
+    VALUE` cannot run inside a transaction.
+  - Diarization requirement (`requires_diarization`) moved onto the template row: a
+    US home visit has several speakers and a mis-attributed quote is a fabrication;
+    a PH spoken recap is single-speaker under RA 4200, so diarizing it buys nothing.
+  - A repeating-section shape in the template contract (`section_schema` entries can
+    carry `repeating: true` plus a nested `fields` list), with per-entry validation
+    in `app/llm/contract.py` — built for PH FDAR's one Focus-Data-Action-Response
+    block per nursing focus, which a flattened prose section could not represent.
+  - Two new prompt modules, `ph_soapie_v1` and `ph_fdar_v1`, each overriding
+    `SHARED_RULES`' unattributed-statement instruction: PH capture is
+    `spoken_recap` only, so the transcript is always single-speaker and the
+    condition that flag guards against cannot occur.
+  - `PATIENT_IDENTIFIER_DETECTED` (critical), on every template in every
+    jurisdiction: a nurse speaking a patient's real name aloud is caught and
+    stripped before it reaches a stored note, whatever the pseudonymous label
+    scheme in use.
+  - Seed migration `0011` adds the `(PH, soapie, 1)` and `(PH, fdar, 1)` template
+    rows and backfills `PATIENT_IDENTIFIER_DETECTED` onto the two existing US rows.
+  - `default_format_for(jurisdiction, role)` replaces the old role-only lookup —
+    role alone cannot pick a format once jurisdiction is also an axis (a Manila
+    ward RN charts FDAR, a US home-health RN charts SOAPIE) — and
+    `AuthService.update_profile` reconciles a format stranded by a jurisdiction
+    change, checked against `note_templates` rather than a hardcoded map so a future
+    seeded format needs no code change to become valid.
+  - **Timing.** Task 9 — seeding the PH rows and wiring jurisdiction-aware role
+    defaults, the last task of the phase — took about 15 minutes wall-clock, start
+    to finish. That is the direct evidence behind this phase's central claim: a
+    third and fourth note format, across a second regulatory regime, arrived as
+    seed data and two prompt modules rather than a pipeline rewrite.
+
 - **Phase 4 — pipeline.** Built test-first.
   - Transcription and LLM providers behind Protocols, with fakes written before the
     live clients so the interfaces are shaped by what the pipeline needs rather than

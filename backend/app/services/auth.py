@@ -13,8 +13,9 @@ from app.core.config import get_settings
 from app.core.jurisdiction import jurisdiction_for_timezone
 from app.core.security import create_access_token, hash_password, needs_rehash, verify_password
 from app.models import User
+from app.repositories.note_templates import NoteTemplateRepository
 from app.repositories.users import UserRepository
-from app.schemas.auth import DEFAULT_FORMAT_BY_ROLE, OnboardingRequest, TokenPair
+from app.schemas.auth import OnboardingRequest, TokenPair, default_format_for
 from app.services.google import GoogleIdentity
 from app.services.refresh_tokens import RefreshTokenService
 
@@ -118,12 +119,23 @@ class AuthService:
             user.jurisdiction = payload.jurisdiction
         if payload.role_title is not None:
             user.role_title = payload.role_title
-            # Derive the format from the role unless the user overrides it, so an RN
-            # working a non-clinical shift is not forced into a clinical template.
+            # Derive from role AND jurisdiction unless the user overrides it. Read
+            # user.jurisdiction, not the payload's -- the timezone branch above has
+            # already applied any change, so this sees the final value.
             if payload.default_note_format is None:
-                user.default_note_format = DEFAULT_FORMAT_BY_ROLE[payload.role_title]
+                user.default_note_format = default_format_for(user.jurisdiction, payload.role_title)
         if payload.default_note_format is not None:
             user.default_note_format = payload.default_note_format
+
+        # A jurisdiction change can strand the user's format: a PH RN defaults to
+        # fdar, and there is no (US, fdar) template. Left alone, their next visit
+        # would resolve to None and fail in the pipeline minutes later, for a mistake
+        # made here. Checked against note_templates rather than a hardcoded map, so
+        # seeding a PH shift_note later makes it valid with no code change.
+        if user.role_title is not None and user.default_note_format is not None:
+            templates = NoteTemplateRepository(self.session)
+            if await templates.get_active(user.jurisdiction, user.default_note_format) is None:
+                user.default_note_format = default_format_for(user.jurisdiction, user.role_title)
 
         await self.session.commit()
         await self.session.refresh(user)

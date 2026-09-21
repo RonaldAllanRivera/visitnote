@@ -12,6 +12,7 @@ from sqlalchemy import Enum
 class NoteFormat(StrEnum):
     SHIFT_NOTE = "shift_note"
     SOAPIE = "soapie"
+    FDAR = "fdar"
 
 
 class FlagSeverity(StrEnum):

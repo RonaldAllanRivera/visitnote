@@ -61,17 +61,29 @@ class UserProfile(BaseModel):
     is_staff: bool
 
 
-# Role determines which note format a user gets by default, so they never have to know
-# what "SOAPIE" means to start working. Licensed clinicians document under Medicare
-# skilled-nursing rules; everyone else writes non-clinical shift notes.
-DEFAULT_FORMAT_BY_ROLE: dict[RoleTitle, NoteFormat] = {
-    RoleTitle.CAREGIVER: NoteFormat.SHIFT_NOTE,
-    RoleTitle.HHA: NoteFormat.SHIFT_NOTE,
-    RoleTitle.CNA: NoteFormat.SHIFT_NOTE,
-    RoleTitle.LPN: NoteFormat.SOAPIE,
-    RoleTitle.RN: NoteFormat.SOAPIE,
-    RoleTitle.OTHER: NoteFormat.SHIFT_NOTE,
+# Role alone cannot pick a format once there are two jurisdictions: an RN on a Manila
+# ward charts FDAR, an RN doing US home health charts SOAPIE. Keyed on both, so a
+# missing pair is a KeyError at import-time review rather than a silent wrong default.
+_DEFAULT_FORMAT: dict[tuple[Jurisdiction, RoleTitle], NoteFormat] = {
+    (Jurisdiction.US, RoleTitle.CAREGIVER): NoteFormat.SHIFT_NOTE,
+    (Jurisdiction.US, RoleTitle.HHA): NoteFormat.SHIFT_NOTE,
+    (Jurisdiction.US, RoleTitle.CNA): NoteFormat.SHIFT_NOTE,
+    (Jurisdiction.US, RoleTitle.LPN): NoteFormat.SOAPIE,
+    (Jurisdiction.US, RoleTitle.RN): NoteFormat.SOAPIE,
+    (Jurisdiction.US, RoleTitle.OTHER): NoteFormat.SHIFT_NOTE,
+    # PH ships no shift_note template -- the PH market is hospital bedside nursing,
+    # not home care -- so every PH role lands on a clinical format.
+    (Jurisdiction.PH, RoleTitle.CAREGIVER): NoteFormat.FDAR,
+    (Jurisdiction.PH, RoleTitle.HHA): NoteFormat.FDAR,
+    (Jurisdiction.PH, RoleTitle.CNA): NoteFormat.FDAR,
+    (Jurisdiction.PH, RoleTitle.LPN): NoteFormat.FDAR,
+    (Jurisdiction.PH, RoleTitle.RN): NoteFormat.FDAR,
+    (Jurisdiction.PH, RoleTitle.OTHER): NoteFormat.FDAR,
 }
+
+
+def default_format_for(jurisdiction: Jurisdiction, role: RoleTitle) -> NoteFormat:
+    return _DEFAULT_FORMAT[(jurisdiction, role)]
 
 
 class OnboardingRequest(BaseModel):

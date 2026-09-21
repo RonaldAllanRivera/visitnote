@@ -162,3 +162,76 @@ async def test_a_new_account_defaults_to_us_before_onboarding(client: AsyncClien
     headers = await _account(client)
     body = (await client.get("/api/v1/auth/me", headers=headers)).json()
     assert body["jurisdiction"] == "US"
+
+
+async def test_switching_jurisdiction_reconciles_a_stranded_note_format(
+    client: AsyncClient,
+) -> None:
+    """Switching PH -> US must not leave the user pointing at a format that has no
+    template in their new jurisdiction.
+
+    A PH RN defaults to fdar. There is no (US, fdar) template, so without
+    reconciliation their next visit would resolve to None and fail in the pipeline --
+    a failure at generation time, minutes later, for a mistake made at the switch.
+    """
+    headers = await _account(client)
+    ph = (
+        await client.patch(
+            "/api/v1/auth/me",
+            headers=headers,
+            json={"role_title": "rn", "timezone": "Asia/Manila"},
+        )
+    ).json()
+    assert ph["default_note_format"] == "fdar"
+
+    us = (
+        await client.patch("/api/v1/auth/me", headers=headers, json={"jurisdiction": "US"})
+    ).json()
+    assert us["jurisdiction"] == "US"
+    assert us["default_note_format"] == "soapie"
+
+
+async def test_switching_jurisdiction_keeps_a_format_that_is_still_valid(
+    client: AsyncClient,
+) -> None:
+    """Reconciliation only fires when the format is actually stranded.
+
+    soapie exists in both jurisdictions, so a US RN who moves to PH keeps it rather
+    than being silently switched to fdar.
+    """
+    headers = await _account(client)
+    await client.patch(
+        "/api/v1/auth/me",
+        headers=headers,
+        json={"role_title": "rn", "timezone": "America/Los_Angeles"},
+    )
+    moved = (
+        await client.patch("/api/v1/auth/me", headers=headers, json={"jurisdiction": "PH"})
+    ).json()
+    assert moved["default_note_format"] == "soapie"
+
+
+async def test_a_ph_rn_defaults_to_fdar_and_a_us_rn_to_soapie(client: AsyncClient) -> None:
+    """Role alone cannot pick a format once there are two jurisdictions.
+
+    An RN on a Manila ward charts FDAR; an RN doing US home health charts SOAPIE.
+    """
+    ph = await _account(client)
+    ph_profile = (
+        await client.patch(
+            "/api/v1/auth/me",
+            headers=ph,
+            json={"role_title": "rn", "timezone": "Asia/Manila"},
+        )
+    ).json()
+    assert ph_profile["default_note_format"] == "fdar"
+
+    us = await _account(client)
+    us_profile = (
+        await client.patch(
+            "/api/v1/auth/me",
+            headers=us,
+            json={"role_title": "rn", "timezone": "America/Los_Angeles"},
+        )
+    ).json()
+    assert us_profile["default_note_format"] == "soapie"

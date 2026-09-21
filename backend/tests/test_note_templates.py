@@ -17,8 +17,12 @@ from app.repositories.note_templates import NoteTemplateRepository
 async def test_both_formats_are_seeded_and_active(session: AsyncSession) -> None:
     rows = (await session.execute(select(NoteTemplate))).scalars().all()
 
+    # Four rows now, not two: PH SOAPIE and PH FDAR joined the original US pair in
+    # this phase. Checked as a set of formats rather than per-jurisdiction, since
+    # soapie itself now has two rows (US and PH) and this test only cares which
+    # formats exist at all.
     by_format = {row.format: row for row in rows}
-    assert set(by_format) == {NoteFormat.SHIFT_NOTE, NoteFormat.SOAPIE}
+    assert set(by_format) == {NoteFormat.SHIFT_NOTE, NoteFormat.SOAPIE, NoteFormat.FDAR}
     assert all(row.is_active for row in rows)
 
 
@@ -51,9 +55,19 @@ async def test_section_ordering_is_contiguous_and_flag_codes_are_unique(
 
 
 async def test_soapie_requires_a_necessity_rationale_flag(session: AsyncSession) -> None:
-    """The flag that makes a skilled visit billable is present by definition."""
+    """The flag that makes a skilled visit billable is present by definition.
+
+    Scoped to US: PH SOAPIE shares the "soapie" format value but drops this exact
+    flag (it is a CMS survey requirement with no PhilHealth analogue), so an
+    unscoped query would now return two rows and `.scalar_one()` would raise.
+    """
     row = (
-        await session.execute(select(NoteTemplate).where(NoteTemplate.format == NoteFormat.SOAPIE))
+        await session.execute(
+            select(NoteTemplate).where(
+                NoteTemplate.jurisdiction == Jurisdiction.US,
+                NoteTemplate.format == NoteFormat.SOAPIE,
+            )
+        )
     ).scalar_one()
 
     critical = {f["code"] for f in row.flag_schema["flags"] if f["severity"] == "critical"}
@@ -124,16 +138,23 @@ async def test_the_same_format_can_exist_in_two_jurisdictions(
     Filipino nurses chart SOAPIE too, but PH SOAPIE must not flag homebound status.
     Same format, different flag schema, two rows -- which the old (format, version)
     unique constraint forbade.
+
+    Version 2 and a synthetic prompt_version, deliberately not `(PH, soapie, 1)` /
+    `ph_soapie_v1`: Task 9 seeded exactly that row for real, so reusing it here would
+    collide with the unique constraint this test exists to prove permits two
+    jurisdictions -- and the cleanup DELETE below is keyed on prompt_version, so
+    reusing the real one would delete the real seeded row as a side effect of this
+    test, not just this test's own fixture.
     """
     template = NoteTemplate(
         jurisdiction=Jurisdiction.PH,
         format=NoteFormat.SOAPIE,
-        version=1,
-        name="PH Skilled Nursing Note",
+        version=2,
+        name="PH Skilled Nursing Note (test fixture)",
         section_schema={"sections": []},
         flag_schema={"flags": []},
         requires_diarization=False,
-        prompt_version="ph_soapie_v1",
+        prompt_version="ph_soapie_test_fixture_v1",
         llm_provider="anthropic",
         model_id="test-model",
         is_active=False,
@@ -163,7 +184,7 @@ async def test_the_same_format_can_exist_in_two_jurisdictions(
     finally:
         await session.rollback()
         await session.execute(
-            sa.text("DELETE FROM note_templates WHERE prompt_version = 'ph_soapie_v1'")
+            sa.text("DELETE FROM note_templates WHERE prompt_version = 'ph_soapie_test_fixture_v1'")
         )
         await session.commit()
 
@@ -175,7 +196,8 @@ async def test_us_templates_require_diarization_and_ph_templates_do_not(
 
     A US home visit has two to four speakers and a mis-attributed quote is a
     fabrication. A PH spoken recap has one speaker, so paying for diarization on a
-    monologue buys nothing.
+    monologue buys nothing. Both halves are asserted now that the PH rows exist --
+    the US-only check was all Task 3 could write, since no PH row existed yet.
     """
     us_soapie = (
         await session.execute(
@@ -186,6 +208,12 @@ async def test_us_templates_require_diarization_and_ph_templates_do_not(
         )
     ).scalar_one()
     assert us_soapie.requires_diarization is True
+
+    repository = NoteTemplateRepository(session)
+    for note_format in (NoteFormat.SOAPIE, NoteFormat.FDAR):
+        ph_template = await repository.get_active(Jurisdiction.PH, note_format)
+        assert ph_template is not None, note_format
+        assert ph_template.requires_diarization is False
 
 
 async def test_resolution_is_scoped_to_the_jurisdiction(session: AsyncSession) -> None:
@@ -203,3 +231,50 @@ async def test_resolution_is_scoped_to_the_jurisdiction(session: AsyncSession) -
 
     # shift_note is a US home-care format; PH has no row for it.
     assert await repository.get_active(Jurisdiction.PH, NoteFormat.SHIFT_NOTE) is None
+
+
+async def test_the_ph_templates_are_seeded_and_resolve(session: AsyncSession) -> None:
+    repository = NoteTemplateRepository(session)
+    for note_format in (NoteFormat.SOAPIE, NoteFormat.FDAR):
+        template = await repository.get_active(Jurisdiction.PH, note_format)
+        assert template is not None, note_format
+        assert template.jurisdiction is Jurisdiction.PH
+        assert template.requires_diarization is False
+
+
+async def test_ph_soapie_drops_the_three_cms_only_flags(session: AsyncSession) -> None:
+    """The single test that proves jurisdiction carries semantic weight.
+
+    Same format, same sections bar one, different flag schema -- because homebound
+    status, skilled-necessity rationale and plan-of-care linkage are CMS survey
+    requirements with no Philippine analogue.
+    """
+    repository = NoteTemplateRepository(session)
+    us = await repository.get_active(Jurisdiction.US, NoteFormat.SOAPIE)
+    ph = await repository.get_active(Jurisdiction.PH, NoteFormat.SOAPIE)
+    assert us is not None and ph is not None
+
+    cms_only = {"MISSING_HOMEBOUND", "MISSING_NECESSITY_RATIONALE", "MISSING_POC_LINK"}
+    us_codes = {f["code"] for f in us.flag_schema["flags"]}
+    ph_codes = {f["code"] for f in ph.flag_schema["flags"]}
+
+    assert cms_only <= us_codes
+    assert cms_only.isdisjoint(ph_codes)
+
+
+async def test_every_template_flags_a_spoken_patient_identifier(
+    session: AsyncSession,
+) -> None:
+    """A pseudonymous label never de-identified the audio; this is what enforces it."""
+    for template in await NoteTemplateRepository(session).all_active():
+        codes = {f["code"] for f in template.flag_schema["flags"]}
+        assert "PATIENT_IDENTIFIER_DETECTED" in codes, template.prompt_version
+
+
+async def test_ph_fdar_has_a_repeating_focus_section(session: AsyncSession) -> None:
+    fdar = await NoteTemplateRepository(session).get_active(Jurisdiction.PH, NoteFormat.FDAR)
+    assert fdar is not None
+    sections = fdar.section_schema["sections"]
+    focus = next(s for s in sections if s["key"] == "focus_entries")
+    assert focus["repeating"] is True
+    assert [f["key"] for f in focus["fields"]] == ["focus", "data", "action", "response"]
