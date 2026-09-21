@@ -47,6 +47,17 @@ class Settings(BaseSettings):
     # types inside the environment source, before any field validator runs, so a
     # plain comma-separated value raises a parse error the validator never sees.
     # NoDecode hands the raw string through to `_split_csv` below.
+    # Login throttling. The lockout is short and self-clearing on purpose: a
+    # per-account lock is also a denial-of-service vector against any address an
+    # attacker knows, so it must expire without an administrator in the loop.
+    login_max_attempts: int = 5
+    login_failure_window_seconds: int = 900
+    login_lockout_seconds: int = 900
+
+    # Google sign-in. Absent in local development, where the feature simply reports
+    # itself unconfigured rather than failing in a confusing way.
+    google_client_id: str | None = None
+
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     trusted_hosts: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["*"]

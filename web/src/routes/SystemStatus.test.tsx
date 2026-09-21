@@ -57,7 +57,7 @@ describe('SystemStatus', () => {
       data: undefined,
       error: undefined,
       response: new Response(null, { status: 503 }),
-    } as unknown as Awaited<ReturnType<typeof api.GET>>)
+    })
 
     renderWithQuery(<SystemStatus />)
 

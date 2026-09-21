@@ -16,3 +16,14 @@ class FlagSeverity(StrEnum):
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
+
+
+class RoleTitle(StrEnum):
+    """What the user does, which sets their default note format at onboarding."""
+
+    CAREGIVER = "caregiver"
+    HHA = "hha"
+    CNA = "cna"
+    LPN = "lpn"
+    RN = "rn"
+    OTHER = "other"
