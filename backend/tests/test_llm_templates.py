@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.templates import TemplateSpec, json_schema_for
 from app.models import NoteFormat, NoteTemplate
+from app.models.enums import Jurisdiction
 
 SECTION_SCHEMA = {
     "sections": [
@@ -27,9 +28,11 @@ FLAG_SCHEMA = {
 
 def _spec() -> TemplateSpec:
     return TemplateSpec.from_schemas(
+        jurisdiction=Jurisdiction.US,
         note_format=NoteFormat.SHIFT_NOTE,
         version=1,
         name="Shift Note",
+        requires_diarization=True,
         section_schema=SECTION_SCHEMA,
         flag_schema=FLAG_SCHEMA,
         prompt_version="shift_note_v1",

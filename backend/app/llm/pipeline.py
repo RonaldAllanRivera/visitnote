@@ -168,7 +168,12 @@ class Pipeline:
     # -- stages ------------------------------------------------------------
 
     async def _template(self, visit: Visit) -> TemplateSpec:
-        template = await NoteTemplateRepository(self.session).get_active(visit.note_format)
+        # Read the visit's jurisdiction, never the user's: the visit is the historical
+        # fact, and a user who changed jurisdiction must not re-resolve the template
+        # for work already captured.
+        template = await NoteTemplateRepository(self.session).get_active(
+            visit.jurisdiction, visit.note_format
+        )
         if template is None:
             raise PipelineError(
                 f"no active template for {visit.note_format}",

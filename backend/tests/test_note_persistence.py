@@ -52,9 +52,16 @@ async def _visit(session: AsyncSession) -> Visit:
 
 
 async def _spec(session: AsyncSession) -> TemplateSpec:
+    # Jurisdiction-aware for the same reason NoteTemplateRepository.get_active is:
+    # once a PH row exists for this format, `.scalar_one()` filtered on format alone
+    # raises MultipleResultsFound instead of picking a row. These fixtures are all
+    # US-format notes.
     template = (
         await session.execute(
-            select(NoteTemplate).where(NoteTemplate.format == NoteFormat.SHIFT_NOTE)
+            select(NoteTemplate).where(
+                NoteTemplate.jurisdiction == Jurisdiction.US,
+                NoteTemplate.format == NoteFormat.SHIFT_NOTE,
+            )
         )
     ).scalar_one()
     return TemplateSpec.from_template(template)

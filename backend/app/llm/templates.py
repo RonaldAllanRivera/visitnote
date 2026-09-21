@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.models import NoteTemplate
-from app.models.enums import FlagSeverity, NoteFormat
+from app.models.enums import FlagSeverity, Jurisdiction, NoteFormat
 
 # The structured header both formats carry. It is kept out of `sections` because it
 # is the only part of the output that is queried rather than read: MISSING_SHIFT_TIMES
@@ -38,9 +38,11 @@ class FlagSpec:
 
 @dataclass(frozen=True, slots=True)
 class TemplateSpec:
+    jurisdiction: Jurisdiction
     format: NoteFormat
     version: int
     name: str
+    requires_diarization: bool
     sections: tuple[SectionSpec, ...]
     flags: tuple[FlagSpec, ...]
     prompt_version: str
@@ -50,9 +52,11 @@ class TemplateSpec:
     @classmethod
     def from_template(cls, template: NoteTemplate) -> "TemplateSpec":
         return cls.from_schemas(
+            jurisdiction=template.jurisdiction,
             note_format=template.format,
             version=template.version,
             name=template.name,
+            requires_diarization=template.requires_diarization,
             section_schema=template.section_schema,
             flag_schema=template.flag_schema,
             prompt_version=template.prompt_version,
@@ -64,9 +68,11 @@ class TemplateSpec:
     def from_schemas(
         cls,
         *,
+        jurisdiction: Jurisdiction,
         note_format: NoteFormat,
         version: int,
         name: str,
+        requires_diarization: bool,
         section_schema: dict[str, Any],
         flag_schema: dict[str, Any],
         prompt_version: str,
@@ -91,9 +97,11 @@ class TemplateSpec:
             for item in flag_schema["flags"]
         )
         return cls(
+            jurisdiction=jurisdiction,
             format=note_format,
             version=version,
             name=name,
+            requires_diarization=requires_diarization,
             sections=sections,
             flags=flags,
             prompt_version=prompt_version,

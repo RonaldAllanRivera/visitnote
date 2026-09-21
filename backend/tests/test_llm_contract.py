@@ -10,7 +10,7 @@ import pytest
 
 from app.llm.contract import BANNED_PHRASES, NoteValidationError, validate_output
 from app.llm.templates import TemplateSpec
-from app.models.enums import FlagSeverity, NoteFormat
+from app.models.enums import FlagSeverity, Jurisdiction, NoteFormat
 
 SECTION_SCHEMA = {
     "sections": [
@@ -26,9 +26,11 @@ FLAG_SCHEMA = {
 }
 
 SPEC = TemplateSpec.from_schemas(
+    jurisdiction=Jurisdiction.US,
     note_format=NoteFormat.SHIFT_NOTE,
     version=1,
     name="Shift Note",
+    requires_diarization=True,
     section_schema=SECTION_SCHEMA,
     flag_schema=FLAG_SCHEMA,
     prompt_version="shift_note_v1",

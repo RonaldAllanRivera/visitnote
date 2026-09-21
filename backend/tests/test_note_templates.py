@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import NoteFormat, NoteTemplate
 from app.models.enums import Jurisdiction
+from app.repositories.note_templates import NoteTemplateRepository
 
 
 async def test_both_formats_are_seeded_and_active(session: AsyncSession) -> None:
@@ -185,3 +186,20 @@ async def test_us_templates_require_diarization_and_ph_templates_do_not(
         )
     ).scalar_one()
     assert us_soapie.requires_diarization is True
+
+
+async def test_resolution_is_scoped_to_the_jurisdiction(session: AsyncSession) -> None:
+    """The whole point of the dimension: same format, different row.
+
+    Seeded PH templates arrive in Task 8; this asserts the US side resolves correctly
+    and that asking for a jurisdiction with no row returns None rather than another
+    jurisdiction's template.
+    """
+    repository = NoteTemplateRepository(session)
+
+    us = await repository.get_active(Jurisdiction.US, NoteFormat.SHIFT_NOTE)
+    assert us is not None
+    assert us.jurisdiction is Jurisdiction.US
+
+    # shift_note is a US home-care format; PH has no row for it.
+    assert await repository.get_active(Jurisdiction.PH, NoteFormat.SHIFT_NOTE) is None
