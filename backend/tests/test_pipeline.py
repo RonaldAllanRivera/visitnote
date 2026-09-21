@@ -9,11 +9,13 @@ import asyncio
 import shutil
 import uuid
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audio import AudioInfo
 from app.llm.pipeline import Pipeline, PipelineError
 from app.llm.providers import FakeLLMProvider, LLMOutputError
 from app.models import Client, Note, NoteFlag, ProcessingJob, Transcript, User, Visit
@@ -226,6 +228,46 @@ async def test_flags_are_written_to_both_the_payload_and_the_rows(
         .all()
     )
     assert [flag["code"] for flag in note.flags] == [row.code for row in rows]
+
+
+# -- diarization -------------------------------------------------------------
+
+
+async def test_the_pipeline_asks_the_provider_to_diarize_when_the_template_requires_it(
+    session: AsyncSession, audio_bytes: bytes
+) -> None:
+    """Read off the visit's spec, not hardcoded: every seeded US template requires it."""
+    visit = await _visit(session)
+    fake = FakeTranscriptionProvider()
+    llm = FakeLLMProvider(responses=[_generation(SHIFT_SECTIONS, [])])
+
+    await _pipeline(
+        session, storage=await _stocked_storage(visit, audio_bytes), llm=llm, transcription=fake
+    ).run(visit.id)
+
+    assert fake.diarize_requests == [True]
+
+
+async def test_the_transcribe_stage_passes_diarize_through_to_the_provider(
+    session: AsyncSession, tmp_path: Path
+) -> None:
+    """The plumbing between spec.requires_diarization and the provider call, for both
+    values. PH templates (requires_diarization=False) are not seeded until Task 8, so
+    this drives the stage directly rather than needing a second full visit fixture --
+    _transcribe touches only self.transcription and self.tracer, never the database.
+    """
+    fake = FakeTranscriptionProvider()
+    pipeline = _pipeline(
+        session, storage=FakeStorageProvider(), llm=FakeLLMProvider(), transcription=fake
+    )
+    audio_info = AudioInfo(duration_seconds=12.0, sample_rate=16_000, channels=1)
+    audio_path = tmp_path / "normalised.wav"
+    audio_path.write_bytes(b"not really audio")
+
+    await pipeline._transcribe(audio_path, trace_id="t-true", audio=audio_info, diarize=True)
+    await pipeline._transcribe(audio_path, trace_id="t-false", audio=audio_info, diarize=False)
+
+    assert fake.diarize_requests == [True, False]
 
 
 # -- what the model is shown -----------------------------------------------

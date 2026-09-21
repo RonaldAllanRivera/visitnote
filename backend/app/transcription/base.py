@@ -3,8 +3,16 @@
 The protocol returns **ordered speaker turns**, never a flat string. That is a
 product requirement rather than a stylistic one: both note formats quote the
 patient's own words, and attributing a quote to the wrong speaker is a fabrication --
-the easiest one in the whole system to commit. A provider that cannot diarize cannot
-satisfy this interface.
+the easiest one in the whole system to commit.
+
+Whether a given call must actually diarize is conditional, not fixed to the
+protocol: a US home visit has two to four speakers and a mis-attributed quote is a
+fabrication risk, but a PH spoken recap has exactly one speaker, so diarizing it is
+spend with no buyer and a single-speaker result there is correct, not degraded. The
+caller states this per call with the required `diarize` keyword -- required, with no
+default, so a new call site cannot silently inherit the wrong answer to a question
+this consequential -- and `note_templates.requires_diarization` is what the pipeline
+reads it from.
 
 No vendor type escapes this package. The pipeline, the evals, and the tracing layer
 see only the dataclasses defined here.
@@ -61,7 +69,7 @@ def speaker_count_of(turns: list[TranscriptTurn] | tuple[TranscriptTurn, ...]) -
 
 
 class TranscriptionProvider(Protocol):
-    async def transcribe(self, audio: Path) -> Transcription: ...
+    async def transcribe(self, audio: Path, *, diarize: bool) -> Transcription: ...
 
 
 @lru_cache

@@ -1,9 +1,10 @@
 """The processing pipeline.
 
-Download the audio, normalise it, transcribe it with diarization, generate a note
-from the active template, validate it, and persist the note with its flags. One
-pipeline serves both note formats: everything format-specific is read from the
-`note_templates` row, so a third format is a data change plus a prompt module.
+Download the audio, normalise it, transcribe it (diarized or not, per what the
+active template requires), generate a note from that template, validate it, and
+persist the note with its flags. One pipeline serves both note formats: everything
+format-specific is read from the `note_templates` row, so a third format is a data
+change plus a prompt module.
 
 This module contains no arq import and no model identifier. It is a plain async
 object with its providers injected, which is what lets the whole thing run in a test
@@ -127,7 +128,9 @@ class Pipeline:
 
             await self._download(visit, source, trace_id=trace_id)
             audio = await self._normalize(source, normalised, trace_id=trace_id)
-            transcription = await self._transcribe(normalised, trace_id=trace_id, audio=audio)
+            transcription = await self._transcribe(
+                normalised, trace_id=trace_id, audio=audio, diarize=spec.requires_diarization
+            )
 
         # Persisted outside the scratch block: the audio is no longer needed, and
         # holding the directory open across a database write serves nothing.
@@ -222,13 +225,13 @@ class Pipeline:
             return audio
 
     async def _transcribe(
-        self, audio_path: Path, *, trace_id: str, audio: AudioInfo
+        self, audio_path: Path, *, trace_id: str, audio: AudioInfo, diarize: bool
     ) -> Transcription:
         with self.tracer.span(
             "transcribe", trace_id=trace_id, audio_seconds=audio.duration_seconds
         ) as span:
             try:
-                transcription = await self.transcription.transcribe(audio_path)
+                transcription = await self.transcription.transcribe(audio_path, diarize=diarize)
             except Exception as exc:
                 # Transcription failures are usually the provider being unavailable
                 # or rate-limiting, both of which a later attempt may survive.
@@ -237,6 +240,7 @@ class Pipeline:
                 ) from exc
 
             span.set(
+                diarize=diarize,
                 speaker_count=transcription.speaker_count,
                 transcript_confidence=transcription.confidence,
                 transcription_provider=transcription.provider,

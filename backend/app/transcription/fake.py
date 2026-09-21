@@ -39,6 +39,21 @@ DEFAULT_TURNS: tuple[TranscriptTurn, ...] = (
     ),
 )
 
+# What a PH spoken recap looks like: one nurse, dictating alone, nobody to
+# mis-attribute a quote to.
+SINGLE_SPEAKER_TURNS: tuple[TranscriptTurn, ...] = (
+    TranscriptTurn(
+        speaker_label="speaker_0",
+        start_ms=0,
+        end_ms=12_000,
+        text=(
+            "Patient seen for wound care follow-up. Dressing changed on the left "
+            "lower leg, site clean and dry, no signs of infection. Vital signs "
+            "stable. Advised to continue current medications."
+        ),
+    ),
+)
+
 
 @dataclass
 class FakeTranscriptionProvider:
@@ -46,10 +61,22 @@ class FakeTranscriptionProvider:
     confidence: float = 0.94
     model_id: str = "fake-diarized-v1"
     transcribed: list[Path] = field(default_factory=list)
+    # What `diarize` each call actually received, so a test can assert on what the
+    # pipeline asked for rather than only on what came back.
+    diarize_requests: list[bool] = field(default_factory=list)
 
-    async def transcribe(self, audio: Path) -> Transcription:
+    async def transcribe(self, audio: Path, *, diarize: bool) -> Transcription:
         self.transcribed.append(audio)
-        turns = tuple(self.turns)
+        self.diarize_requests.append(diarize)
+        # `self.turns is DEFAULT_TURNS` (identity, not equality) is how "nobody
+        # scripted this" is told apart from "a caller explicitly passed the default
+        # multi-speaker fixture as their script": a script always wins over
+        # `diarize`, exactly as a real transcript's content does not depend on
+        # whether diarization was requested.
+        if self.turns is DEFAULT_TURNS and not diarize:
+            turns = SINGLE_SPEAKER_TURNS
+        else:
+            turns = tuple(self.turns)
         return Transcription(
             turns=turns,
             raw_text=raw_text_from(turns),

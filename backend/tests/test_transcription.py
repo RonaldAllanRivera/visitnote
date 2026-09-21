@@ -17,6 +17,7 @@ from app.transcription import (
     raw_text_from,
     speaker_count_of,
 )
+from app.transcription.fake import SINGLE_SPEAKER_TURNS
 
 
 def _turns(*items: tuple[str, str]) -> list[TranscriptTurn]:
@@ -47,7 +48,7 @@ async def test_fake_provider_returns_more_than_one_speaker(tmp_path: Path) -> No
     audio = tmp_path / "visit.wav"
     audio.write_bytes(b"not really audio")
 
-    result = await FakeTranscriptionProvider().transcribe(audio)
+    result = await FakeTranscriptionProvider().transcribe(audio, diarize=True)
 
     assert result.speaker_count >= 2
     assert len({turn.speaker_label for turn in result.turns}) == result.speaker_count
@@ -59,7 +60,7 @@ async def test_fake_provider_can_be_scripted_with_specific_turns(tmp_path: Path)
     audio.write_bytes(b"not really audio")
     scripted = _turns(("speaker_0", "Blood pressure 130 over 80."))
 
-    result = await FakeTranscriptionProvider(turns=scripted).transcribe(audio)
+    result = await FakeTranscriptionProvider(turns=scripted).transcribe(audio, diarize=True)
 
     assert result.raw_text == "Blood pressure 130 over 80."
     assert result.speaker_count == 1
@@ -70,10 +71,47 @@ async def test_fake_provider_reports_its_own_model_id(tmp_path: Path) -> None:
     audio = tmp_path / "visit.wav"
     audio.write_bytes(b"not really audio")
 
-    result = await FakeTranscriptionProvider().transcribe(audio)
+    result = await FakeTranscriptionProvider().transcribe(audio, diarize=True)
 
     assert result.provider == "fake"
     assert result.model_id
+
+
+async def test_fake_provider_returns_a_single_speaker_when_diarize_is_false(
+    tmp_path: Path,
+) -> None:
+    """A fake that ignored `diarize` would let a pipeline that drops the flag pass
+    every test -- the same reasoning DEFAULT_TURNS above exists for the True case."""
+    audio = tmp_path / "visit.wav"
+    audio.write_bytes(b"not really audio")
+
+    result = await FakeTranscriptionProvider().transcribe(audio, diarize=False)
+
+    assert result.turns == SINGLE_SPEAKER_TURNS
+    assert result.speaker_count == 1
+
+
+async def test_fake_provider_records_the_diarize_value_it_received(tmp_path: Path) -> None:
+    """Lets a caller assert on what the pipeline asked for, not only on what came back."""
+    audio = tmp_path / "visit.wav"
+    audio.write_bytes(b"not really audio")
+    provider = FakeTranscriptionProvider()
+
+    await provider.transcribe(audio, diarize=True)
+    await provider.transcribe(audio, diarize=False)
+
+    assert provider.diarize_requests == [True, False]
+
+
+async def test_a_scripted_transcript_ignores_diarize(tmp_path: Path) -> None:
+    """An explicit script is what the caller said happened; `diarize` must not override it."""
+    audio = tmp_path / "visit.wav"
+    audio.write_bytes(b"not really audio")
+    scripted = _turns(("speaker_0", "Hello."), ("speaker_1", "Hi."))
+
+    result = await FakeTranscriptionProvider(turns=scripted).transcribe(audio, diarize=False)
+
+    assert result.speaker_count == 2
 
 
 def test_provider_selection_falls_back_to_the_fake_without_credentials() -> None:

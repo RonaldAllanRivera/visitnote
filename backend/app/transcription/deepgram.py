@@ -32,20 +32,28 @@ REQUEST_TIMEOUT_SECONDS = 600.0
 
 
 class DiarizationUnavailableError(Exception):
-    """The response carried no speaker turns.
+    """A diarize=True request came back with no speaker turns.
 
     Treated as a failure rather than degraded to a flat transcript. An undiarized
     transcript makes every patient quote unverifiable, and the note prompts are
     required to quote the patient -- so the pipeline would produce exactly the
-    fabrication this provider exists to prevent.
+    fabrication this provider exists to prevent. Only raised when diarization was
+    requested: under diarize=False a response with no utterances is not a failure,
+    it is one speaker producing nothing Deepgram chose to segment.
     """
 
 
-def parse_response(payload: dict[str, Any], *, model_id: str) -> Transcription:
-    """Turn a /v1/listen response into the protocol's own types."""
+def parse_response(payload: dict[str, Any], *, model_id: str, diarize: bool) -> Transcription:
+    """Turn a /v1/listen response into the protocol's own types.
+
+    `diarize` gates the "no utterances" check, not just the request param sent
+    earlier: a PH spoken recap genuinely has one speaker, so a diarize=False call
+    coming back with a single implied speaker_0 turn is the expected, correct
+    result, not diarization failing to run.
+    """
     results = payload.get("results", {})
     utterances = results.get("utterances")
-    if not utterances:
+    if diarize and not utterances:
         raise DiarizationUnavailableError(
             "response contained no utterances; diarization did not run"
         )
@@ -57,7 +65,7 @@ def parse_response(payload: dict[str, Any], *, model_id: str) -> Transcription:
             end_ms=round(float(utterance["end"]) * 1000),
             text=str(utterance.get("transcript", "")).strip(),
         )
-        for utterance in utterances
+        for utterance in (utterances or [])
     )
 
     return Transcription(
@@ -99,13 +107,16 @@ class DeepgramProvider:
         self._model_id = settings.transcription_model_id
         self._redact_pii = settings.deepgram_redact_pii
 
-    async def transcribe(self, audio: Path) -> Transcription:
+    async def transcribe(self, audio: Path, *, diarize: bool) -> Transcription:
         params: dict[str, str] = {
             "model": self._model_id,
-            # Not optional. The protocol's contract is speaker turns.
-            "diarize": "true",
+            # Per-call, not hardcoded: a US template requires it, a PH template does
+            # not, and the caller states which via the required `diarize` keyword.
+            "diarize": "true" if diarize else "false",
             # Gives back utterance-level turns instead of per-word speaker tags,
-            # which would leave this module doing the segmentation itself.
+            # which would leave this module doing the segmentation itself. Requested
+            # regardless of diarize, so a diarize=False call still gets segmented
+            # turns rather than one undifferentiated blob.
             "utterances": "true",
             "punctuate": "true",
             "smart_format": "true",
@@ -128,4 +139,4 @@ class DeepgramProvider:
             response.raise_for_status()
             payload: dict[str, Any] = response.json()
 
-        return parse_response(payload, model_id=self._model_id)
+        return parse_response(payload, model_id=self._model_id, diarize=diarize)
