@@ -6,6 +6,117 @@ the part you will be asked to defend in an interview.
 
 ---
 
+## v8 → v9 — 2026-09-21
+
+Review of v8 against a changed goal: the product now serves two markets, and the build
+must reach a genuinely finished v1 rather than a broad half-finished one. v8's
+architecture survives intact — every change below is a data dimension, a scope
+decision, or a correction.
+
+### The incoherence v9 resolves
+
+**v8 was half-US and half-PH and never said so.** The SOAPIE template encoded CMS
+home-health survey concepts — homebound status, skilled-necessity rationale,
+plan-of-care linkage — while the payment rail was GCash and prices were in PHP. Those
+two halves describe different customers. v9 makes jurisdiction explicit and assigns
+each market a job: **PH is the revenue market, US is the portfolio and validation
+market.** **ADR.**
+*Rationale: a spec that is quietly about two countries produces a product that serves
+neither. Naming which one pays resolves every downstream question — pricing, consent,
+flag semantics, disclaimers.*
+
+### Correctness
+
+**`note_format` was a Postgres ENUM, and formats are now a growing set.** `ALTER TYPE
+... ADD VALUE` cannot run inside a transaction block and values can never be removed.
+Converted to `VARCHAR(32)` validated against `note_templates`, with `NoteFormat`
+retained as a Python `StrEnum`. Done at six migrations with no production data, where
+it is free. **ADR.**
+*Rationale: an ENUM was the right type for a fixed pair and the wrong one for an
+extensible set. The cost of this conversion only ever goes up.*
+
+**Jurisdiction is a separate axis from format, and conflating them would have broken
+the eval suite.** Filipino nurses also chart SOAPIE, but PH SOAPIE must not flag
+homebound status. That is one format with two flag schemas, which `ph_soapie` as a
+format value cannot express without making per-format eval reporting incoherent. Added
+`note_templates.jurisdiction` and `users.jurisdiction`, re-keyed the unique constraint
+to `(jurisdiction, format, version)`. **ADR.**
+
+**Sampling parameters and assistant prefill are rejected by current models.**
+`temperature`, `top_p`, `top_k` and assistant prefill all return 400 on the 4.6+
+family. A clinical pipeline's instinct is `temperature=0` for determinism and a prefill
+to force JSON — both would have failed at integration time. Determinism now comes from
+structured outputs (`output_config.format`) plus `strict: true`. `budget_tokens` is
+likewise rejected; use `thinking: {type: "adaptive"}` with `output_config.effort`.
+*Rationale: this is the same failure class as v8's stale model IDs. Provider APIs move
+faster than specifications, which is the entire argument for the provider layer.*
+
+**`live_audio` is a criminal-law problem in the Philippines, not a UX preference.**
+RA 4200 (Anti-Wiretapping) requires all-party consent with criminal liability, and a
+ward holds twenty to forty patients, families, and staff. `live_audio` is now rejected
+server-side for PH users, with a test. The PH product is a `spoken_recap` product.
+**ADR.**
+*Rationale: v8 treated capture mode as a consent-gate checkbox. In one jurisdiction it
+is a prosecutable act, and a checkbox cannot obtain consent on a bystander's behalf.*
+
+**A pseudonymous label never de-identified the audio, and now something enforces it.**
+Added `PATIENT_IDENTIFIER_DETECTED` (critical) across all formats: a detected patient
+name is stripped from the generated note and flagged. Sharper in PH, where an
+individual staff nurse — not an agency under a data processing agreement — is the one
+moving sensitive personal information off their employer's premises under RA 10173.
+
+### Scope
+
+**v1 is now defined, because the product will not be demoed until it is complete.**
+That makes the definition of "complete" the most consequential decision in the spec.
+The Expo mobile client and the PH Endorsement format move to a documented roadmap; the
+dashboard is reduced to a review queue and three charts.
+*Rationale: an unshipped project is worth nothing as either a product or a portfolio
+piece. A roadmap that states what was deferred and why reads as scope discipline; the
+same repository without that section reads as unfinished.*
+
+**PH Endorsement is deferred for a structural reason, not a scheduling one.** An
+endorsement covers a nurse's entire assignment — five to fifteen patients in one
+document — while `visits` references one client and `notes` references one visit.
+It is a data model change, not a template change. **ADR.**
+
+**Manual GCash billing ships in full in v1, and Stripe is removed entirely.** v8
+deferred a `StripeProvider` to a later phase and kept a `BillingProvider` seam for it.
+v9 deletes both: the commercial hypothesis cannot be tested without collecting money
+from a real customer, and a protocol with exactly one implementation is an abstraction
+paying rent it does not earn. The decoupling that is load-bearing today is kept — the
+entitlement engine cannot tell whether a subscription was activated by the ops console,
+the staff CLI, or a trial. **ADR.**
+*Rationale: this is the deliberate contrast with `LLMProvider` and
+`TranscriptionProvider`, which do earn their protocols because the fake is a real
+second implementation every test depends on. Knowing which seams to build is worth more
+than building all of them.*
+
+**US accounts have no purchase path in v1, and the UI says so.** GCash is a Philippine
+wallet and there is no second rail. An expired US trial renders a no-purchase-path
+state rather than an Upgrade form that cannot complete.
+
+### Additions
+
+**PH FDAR is the primary PH format, and it needs a repeating section group.** A shift
+produces several F-D-A-R entries, one per focus — unlike every other format in the
+product, which is a flat ordered list of sections. `section_schema` gains a `repeating`
+section kind, and the Phase 5 editor must render it. Called out in the spec so it is
+not discovered mid-phase. **ADR.**
+
+**The two licensed RNs are eval authors, not beta testers.** Golden dataset cases
+authored and validated by a licensed nurse in the relevant jurisdiction discharge the
+clinical-review gate v8 already required before commercial launch, and `EVALS.md`
+records who validated what.
+*Rationale: clinical access is the scarcest resource on this project. Spending it on UI
+feedback instead of on the golden dataset would waste it.*
+
+**Per-note unit economics are now in the spec.** The PH tier leaves roughly ₱10 of room
+per note against about ₱1.75 of cost. The margin is real but not large, which is why
+per-note cost recording is a v1 requirement rather than an operator nicety.
+
+---
+
 ## v7 → v8 — 2026-09-21
 
 Review of v7 against two goals: a portfolio piece that survives senior-engineer scrutiny, and a
