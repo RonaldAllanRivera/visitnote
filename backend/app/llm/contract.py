@@ -163,24 +163,54 @@ def _check_repeating_entries(section: SectionSpec, value: SectionValue) -> None:
 
 
 def _check_banned_phrases(sections: dict[str, SectionValue]) -> None:
-    for key, text in sections.items():
-        # Repeating sections carry their prose inside each entry's fields, not as the
-        # section value itself; the ban applies to a single block of prose, so a list
-        # here is a shape the ban has no opinion on -- `_check_repeating_sections`
-        # above is what validates it.
-        if not isinstance(text, str):
-            continue
-        if not text:
-            continue
-        unquoted = _QUOTED_SPAN.sub(" ", text).lower()
-        for phrase in BANNED_PHRASES:
-            if phrase in unquoted:
+    """Reject the banned phrases wherever a section carries the note's own prose.
+
+    A repeating section keeps its prose inside each entry's fields -- FDAR's Data and
+    Action text -- rather than in the section value itself. Skipping list values here
+    (as an earlier version did, solely to avoid `.sub()` crashing on a list) would
+    make a flag like VAGUE_LANGUAGE unenforceable on exactly the format whose
+    substance lives almost entirely in entries, with no test failure to show it.
+    """
+    for key, value in sections.items():
+        if isinstance(value, str):
+            phrase = _banned_phrase_in(value)
+            if phrase is not None:
                 raise NoteValidationError(
                     f'The {key} section contains the banned phrase "{phrase}". '
                     "Replace it with a specific, measurable statement from the "
                     "transcript, or set the section to null and raise the "
                     "appropriate flag. Do not invent detail to replace it."
                 )
+        elif isinstance(value, list):
+            for index, entry in enumerate(value):
+                for field_key, field_value in entry.items():
+                    if not isinstance(field_value, str):
+                        continue
+                    phrase = _banned_phrase_in(field_value)
+                    if phrase is not None:
+                        raise NoteValidationError(
+                            f'The "{key}" section, entry {index}, field "{field_key}" '
+                            f'contains the banned phrase "{phrase}". Replace it with a '
+                            "specific, measurable statement from the transcript, or "
+                            "set the field to null and raise the appropriate flag. Do "
+                            "not invent detail to replace it."
+                        )
+
+
+def _banned_phrase_in(text: str) -> str | None:
+    """The first banned phrase used in `text`'s own voice, or None.
+
+    Quoted spans are exempt: the ban governs how the note describes the visit, not
+    what the patient is recorded as having said, and that has to hold identically
+    whether `text` is a flat section's value or one field of a repeating entry.
+    """
+    if not text:
+        return None
+    unquoted = _QUOTED_SPAN.sub(" ", text).lower()
+    for phrase in BANNED_PHRASES:
+        if phrase in unquoted:
+            return phrase
+    return None
 
 
 def _normalise_flags(flags: list[GeneratedFlag], spec: TemplateSpec) -> list[GeneratedFlag]:

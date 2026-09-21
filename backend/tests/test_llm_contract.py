@@ -315,3 +315,65 @@ def test_a_non_repeating_section_sent_as_a_list_is_rejected() -> None:
         validate_output(payload, SPEC)
 
     assert "observations" in exc.value.repair_instruction
+
+
+def test_a_banned_phrase_inside_a_repeating_entry_field_is_rejected_and_located() -> None:
+    """VAGUE_LANGUAGE has to be enforceable on a repeating-section format, where
+    almost all the note's own prose lives inside entry fields rather than in a flat
+    section value -- skipping list values here would make the flag unenforceable on
+    exactly the format that needs it most.
+    """
+    payload = _repeating_payload(
+        sections={
+            "shift_details": "Ward 3, Bed 4, night shift.",
+            "focus_entries": [
+                {
+                    "focus": "Pain",
+                    "data": "Reports 7/10 on movement.",
+                    "action": "Care provided as ordered.",
+                    "response": "Rated 3/10 after 30 minutes.",
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(NoteValidationError) as exc:
+        validate_output(payload, REPEATING_SPEC)
+
+    assert "focus_entries" in exc.value.repair_instruction
+    assert "entry 0" in exc.value.repair_instruction
+    assert "action" in exc.value.repair_instruction
+    assert "care provided as ordered" in exc.value.repair_instruction.lower()
+
+
+def test_a_banned_phrase_inside_a_quotation_in_an_entry_field_is_allowed() -> None:
+    """What the patient is recorded as having said is evidence, inside an entry
+    field exactly as it is inside a flat section."""
+    payload = _repeating_payload(
+        sections={
+            "shift_details": "Ward 3, Bed 4, night shift.",
+            "focus_entries": [
+                {
+                    "focus": "Pain",
+                    "data": 'Patient stated "I am doing well" when asked.',
+                    "action": "Gave PRN analgesic per order.",
+                    "response": "Rated 3/10 after 30 minutes.",
+                }
+            ],
+        }
+    )
+
+    note = validate_output(payload, REPEATING_SPEC)
+
+    entries = note.sections["focus_entries"]
+    assert isinstance(entries, list)
+    assert entries[0]["data"] == 'Patient stated "I am doing well" when asked.'
+
+
+def test_a_repeating_payload_without_banned_phrases_still_validates() -> None:
+    """The per-entry traversal must not reject entries that use no banned phrase."""
+    note = validate_output(_repeating_payload(), REPEATING_SPEC)
+
+    entries = note.sections["focus_entries"]
+    assert isinstance(entries, list)
+    assert len(entries) == 2
