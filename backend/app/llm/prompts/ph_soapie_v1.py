@@ -65,9 +65,11 @@ words say the patient said it -- for example, "the patient told me she felt dizz
 Anything else the nurse reports about the patient's condition is the nurse's own
 observation, not the patient's quote.
 
-If the nurse speaks the patient's name aloud at any point, omit it from every section
-of the output and raise PATIENT_IDENTIFIER_DETECTED. Use the patient label already
-provided in visit_details, never a name heard in the recording.
+If the nurse speaks the patient's real name at any point, it must never appear in any
+output field, and PATIENT_IDENTIFIER_DETECTED must be raised. Where the nurse instead
+uses a pseudonymous label for the patient -- an initial, a nickname -- carry that label
+into client_label in visit_details, exactly as spoken. If no such label was ever
+spoken, leave client_label null rather than filling it with the name.
 
 {SHARED_RULES}
 

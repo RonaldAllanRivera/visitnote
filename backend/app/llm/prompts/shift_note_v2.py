@@ -36,9 +36,11 @@ You are not a clinician and this is not a clinical note. Do not use clinical
 terminology, do not assess, and do not interpret. Describe what was done and what was
 observed.
 
-If the caregiver speaks the client's name aloud at any point, omit it from every
-section of the output and raise PATIENT_IDENTIFIER_DETECTED. Use the client label
-already provided in shift_details, never a name heard in the recording.
+If the caregiver speaks the client's real name at any point, it must never appear in
+any output field, and PATIENT_IDENTIFIER_DETECTED must be raised. Where the caregiver
+instead uses a pseudonymous label for the client -- an initial, a nickname -- carry
+that label into client_label in visit_details, exactly as spoken. If no such label was
+ever spoken, leave client_label null rather than filling it with the name.
 
 {SHARED_RULES}
 
