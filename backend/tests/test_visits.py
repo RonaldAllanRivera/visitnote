@@ -13,7 +13,10 @@ without it rather than trusting the client to have asked.
 """
 
 import uuid
+from collections.abc import AsyncGenerator
 
+import pytest
+import sqlalchemy as sa
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +24,42 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import ConsentLog, Visit
 
 PASSWORD = "a-sufficiently-long-password"
+
+
+@pytest.fixture(autouse=True)
+async def _no_stray_fdar_visits(session: AsyncSession) -> AsyncGenerator[None]:
+    """Several tests below open a PH visit with no explicit `note_format`, which
+    resolves to `fdar` -- there is no (PH, shift_note) template. Committed against
+    the real, shared database (see conftest -- no per-test rollback), an uncleaned
+    `fdar` visit blocks `alembic downgrade` past 0011, which refuses while any
+    exists.
+
+    An autouse fixture rather than a per-test try/finally because the set of tests
+    that create one is incidental to what each test is actually checking (jurisdiction,
+    idempotency, consent) and would drift out of sync with a hand-maintained list.
+    Diffing ids before and after, rather than deleting by format, keeps this scoped to
+    rows this test created and never touches the accumulated rows already in a dev
+    database.
+    """
+    before = {
+        row[0]
+        for row in (
+            await session.execute(sa.text("SELECT id FROM visits WHERE note_format = 'fdar'"))
+        ).all()
+    }
+    yield
+    # rollback() first, matching the pattern in test_note_templates.py: a failed
+    # assertion above leaves the session's transaction usable, but a DBAPI error
+    # would leave it aborted, and the cleanup DELETE must run in a fresh transaction
+    # either way.
+    await session.rollback()
+    after = (
+        await session.execute(sa.text("SELECT id FROM visits WHERE note_format = 'fdar'"))
+    ).all()
+    created = [row[0] for row in after if row[0] not in before]
+    if created:
+        await session.execute(sa.text("DELETE FROM visits WHERE id = ANY(:ids)"), {"ids": created})
+        await session.commit()
 
 
 def _email() -> str:

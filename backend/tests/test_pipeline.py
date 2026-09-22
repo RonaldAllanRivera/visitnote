@@ -12,6 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -718,24 +719,45 @@ async def test_the_pipeline_generates_a_ph_fdar_note_through_the_unscripted_fake
         capture_mode=CaptureMode.SPOKEN_RECAP,
     )
     llm = FakeLLMProvider()
+    # Read before the try block: `session.rollback()` in `finally` expires `visit`,
+    # and an expired attribute's implicit reload is a lazy load SQLAlchemy's async
+    # session cannot perform outside an awaited call, so `visit.id` there would raise
+    # MissingGreenlet instead of running the cleanup it is needed for.
+    visit_id = visit.id
 
-    await _pipeline(session, storage=await _stocked_storage(visit, audio_bytes), llm=llm).run(
-        visit.id
-    )
+    # This test commits against the real, shared database (see conftest -- there is
+    # no per-test rollback or truncation), so the visit and note rows below are
+    # durable the moment they are written. `alembic downgrade` past 0011 deliberately
+    # refuses while any `visits.note_format='fdar'` or `notes.format='fdar'` row
+    # exists (0011's own downgrade), so this is the one test in the file that must
+    # clean up after itself -- everything else stays 'shift_note' or 'soapie', which
+    # downgrade tolerates. rollback() first clears whatever transaction state the try
+    # block left behind, matching the pattern in test_note_templates.py, so the
+    # cleanup DELETE always runs in a fresh transaction. Deleting the visit by id
+    # (never by format, which would reach every other test's accumulated rows too)
+    # cascades to its note, transcript, and processing job.
+    try:
+        await _pipeline(session, storage=await _stocked_storage(visit, audio_bytes), llm=llm).run(
+            visit.id
+        )
 
-    await session.refresh(visit)
-    assert visit.status == VisitStatus.READY
+        await session.refresh(visit)
+        assert visit.status == VisitStatus.READY
 
-    note = (await session.execute(select(Note).where(Note.visit_id == visit.id))).scalar_one()
-    assert note.format == NoteFormat.FDAR
-    assert note.prompt_version == "ph_fdar_v1"
+        note = (await session.execute(select(Note).where(Note.visit_id == visit.id))).scalar_one()
+        assert note.format == NoteFormat.FDAR
+        assert note.prompt_version == "ph_fdar_v1"
 
-    entries = note.sections["focus_entries"]
-    assert isinstance(entries, list) and len(entries) == 2
-    for entry in entries:
-        assert set(entry) == {"focus", "data", "action", "response"}
+        entries = note.sections["focus_entries"]
+        assert isinstance(entries, list) and len(entries) == 2
+        for entry in entries:
+            assert set(entry) == {"focus", "data", "action", "response"}
 
-    # The other finding this test guards: a PH request's user content must never
-    # carry a code PH's flag_schema does not declare, or _normalise_flags would
-    # have rejected this run's own generation and this assertion would never run.
-    assert "UNATTRIBUTED_STATEMENT" not in llm.calls[0].user
+        # The other finding this test guards: a PH request's user content must never
+        # carry a code PH's flag_schema does not declare, or _normalise_flags would
+        # have rejected this run's own generation and this assertion would never run.
+        assert "UNATTRIBUTED_STATEMENT" not in llm.calls[0].user
+    finally:
+        await session.rollback()
+        await session.execute(sa.text("DELETE FROM visits WHERE id = :id"), {"id": visit_id})
+        await session.commit()
