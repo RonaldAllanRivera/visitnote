@@ -19,24 +19,46 @@ PLACEHOLDER = "[fake provider] No model was called. Configure ANTHROPIC_API_KEY.
 def response_for_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """Build a conforming answer from the output schema.
 
-    An unscripted fake cannot use a fixed payload: the two note formats have
-    different section keys, and a payload that satisfies one fails validation
-    against the other. Deriving it from the schema is what makes `docker compose up`
-    produce a working end-to-end flow with no API key -- otherwise every recording
-    in local development fails at generation.
+    An unscripted fake cannot use a fixed payload: note formats have different
+    section keys, and a payload that satisfies one fails validation against another.
+    Deriving it from the schema is what makes `docker compose up` produce a working
+    end-to-end flow with no API key -- otherwise every recording in local
+    development fails at generation.
+
+    A repeating section (FDAR's focus entries) is a JSON Schema array of objects,
+    not a string like every other section, so it needs a list of entries rather
+    than the placeholder every flat section gets -- a string there fails
+    validate_output, and the fake is sticky, so the repair attempt would return the
+    same non-conforming payload.
     """
     properties = schema.get("properties", {})
 
     def keys_of(name: str) -> list[str]:
         return list(properties.get(name, {}).get("properties", {}))
 
+    section_properties: dict[str, Any] = properties.get("sections", {}).get("properties", {})
+
     return {
         # Null throughout: the fake was not given a transcript to read times off,
         # and inventing them is the one thing this system must never model.
         "visit_details": dict.fromkeys(keys_of("visit_details")),
-        "sections": dict.fromkeys(keys_of("sections"), PLACEHOLDER),
+        "sections": {
+            key: _section_value(section_schema)
+            for key, section_schema in section_properties.items()
+        },
         "flags": [],
     }
+
+
+def _section_value(section_schema: dict[str, Any]) -> Any:
+    if section_schema.get("type") != "array":
+        return PLACEHOLDER
+
+    entry_keys = list(section_schema.get("items", {}).get("properties", {}))
+    # Two entries, not one: a single entry would not exercise the multi-entry path a
+    # repeating section exists for, and that path is exactly what needs to be
+    # reachable locally with no API key.
+    return [dict.fromkeys(entry_keys, PLACEHOLDER) for _ in range(2)]
 
 
 @dataclass(frozen=True, slots=True)

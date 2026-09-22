@@ -84,9 +84,17 @@ def audio_bytes(tmp_path_factory: pytest.TempPathFactory) -> bytes:
 
 
 async def _visit(
-    session: AsyncSession, note_format: NoteFormat = NoteFormat.SHIFT_NOTE
+    session: AsyncSession,
+    note_format: NoteFormat = NoteFormat.SHIFT_NOTE,
+    *,
+    jurisdiction: Jurisdiction = Jurisdiction.US,
+    capture_mode: CaptureMode = CaptureMode.LIVE_AUDIO,
 ) -> Visit:
-    user = User(email=f"{uuid.uuid4().hex}@visitnote-testing.com", timezone="America/Los_Angeles")
+    user = User(
+        email=f"{uuid.uuid4().hex}@visitnote-testing.com",
+        timezone="America/Los_Angeles",
+        jurisdiction=jurisdiction,
+    )
     session.add(user)
     await session.flush()
 
@@ -97,9 +105,9 @@ async def _visit(
     visit = Visit(
         user_id=user.id,
         client_id=care_recipient.id,
-        jurisdiction=Jurisdiction.US,
+        jurisdiction=jurisdiction,
         note_format=note_format,
-        capture_mode=CaptureMode.LIVE_AUDIO,
+        capture_mode=capture_mode,
         status=VisitStatus.UPLOADED,
         timezone="America/Los_Angeles",
         idempotency_key=uuid.uuid4().hex,
@@ -685,3 +693,49 @@ async def test_an_unknown_visit_is_an_error(session: AsyncSession) -> None:
 
     with pytest.raises(PipelineError):
         await _pipeline(session, storage=FakeStorageProvider(), llm=llm).run(uuid.uuid4())
+
+
+# -- PH FDAR -----------------------------------------------------------------
+
+
+async def test_the_pipeline_generates_a_ph_fdar_note_through_the_unscripted_fake(
+    session: AsyncSession, audio_bytes: bytes
+) -> None:
+    """Composes the real seeded PH FDAR row -> TemplateSpec -> json_schema_for ->
+    validate_output, end to end through the unscripted fake provider.
+
+    Every other `Visit(...)` in this file is `Jurisdiction.US`; nothing else here
+    drives the one format this phase exists to add. An unscripted `FakeLLMProvider`
+    (no responses, so it derives its answer from the schema, exactly like
+    `docker compose up` with no API key) is used deliberately: a scripted payload
+    would hide a fake that cannot itself satisfy FDAR's repeating focus_entries
+    section.
+    """
+    visit = await _visit(
+        session,
+        NoteFormat.FDAR,
+        jurisdiction=Jurisdiction.PH,
+        capture_mode=CaptureMode.SPOKEN_RECAP,
+    )
+    llm = FakeLLMProvider()
+
+    await _pipeline(session, storage=await _stocked_storage(visit, audio_bytes), llm=llm).run(
+        visit.id
+    )
+
+    await session.refresh(visit)
+    assert visit.status == VisitStatus.READY
+
+    note = (await session.execute(select(Note).where(Note.visit_id == visit.id))).scalar_one()
+    assert note.format == NoteFormat.FDAR
+    assert note.prompt_version == "ph_fdar_v1"
+
+    entries = note.sections["focus_entries"]
+    assert isinstance(entries, list) and len(entries) == 2
+    for entry in entries:
+        assert set(entry) == {"focus", "data", "action", "response"}
+
+    # The other finding this test guards: a PH request's user content must never
+    # carry a code PH's flag_schema does not declare, or _normalise_flags would
+    # have rejected this run's own generation and this assertion would never run.
+    assert "UNATTRIBUTED_STATEMENT" not in llm.calls[0].user

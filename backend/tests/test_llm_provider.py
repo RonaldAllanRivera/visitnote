@@ -146,6 +146,57 @@ async def test_an_unscripted_fake_satisfies_the_schema_it_is_given() -> None:
     assert result.data["flags"] == []
 
 
+async def test_an_unscripted_fake_emits_entries_for_a_repeating_section() -> None:
+    """FDAR's focus_entries is an array of objects, not a string like every other
+    section. Against the real seeded FDAR schema, a fixed string there fails
+    validate_output, and the fake is sticky -- the repair attempt returns the same
+    payload, so the run ends in a non-retryable PipelineError on the one format this
+    phase exists to add.
+    """
+    from app.llm.providers.fake import PLACEHOLDER
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "visit_details": {"type": "object", "properties": {"client_label": {}}},
+            "sections": {
+                "type": "object",
+                "properties": {
+                    "shift_details": {"type": ["string", "null"]},
+                    "focus_entries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "focus": {},
+                                "data": {},
+                                "action": {},
+                                "response": {},
+                            },
+                        },
+                    },
+                },
+            },
+            "flags": {"type": "array"},
+        },
+    }
+
+    result = await FakeLLMProvider().complete_json(
+        system="s", user="u", schema=schema, model_id="m"
+    )
+
+    entries = result.data["sections"]["focus_entries"]
+    assert isinstance(entries, list)
+    # Two entries, not one: a single entry would not exercise the multi-entry path a
+    # repeating section exists for.
+    assert len(entries) == 2
+    for entry in entries:
+        assert set(entry) == {"focus", "data", "action", "response"}
+
+    # A non-repeating section in the same schema is unaffected by the change.
+    assert result.data["sections"]["shift_details"] == PLACEHOLDER
+
+
 async def test_an_unscripted_fake_makes_it_obvious_the_note_is_not_real() -> None:
     """A placeholder that reads like a real note is a trap for whoever sees it next."""
     schema = {
