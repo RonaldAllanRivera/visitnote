@@ -140,11 +140,11 @@ async def test_the_same_format_can_exist_in_two_jurisdictions(
     unique constraint forbade.
 
     Version 2 and a synthetic prompt_version, deliberately not `(PH, soapie, 1)` /
-    `ph_soapie_v1`: Task 9 seeded exactly that row for real, so reusing it here would
-    collide with the unique constraint this test exists to prove permits two
-    jurisdictions -- and the cleanup DELETE below is keyed on prompt_version, so
-    reusing the real one would delete the real seeded row as a side effect of this
-    test, not just this test's own fixture.
+    `ph_soapie_v1`: that row is seeded for real, so reusing it here would collide with
+    the unique constraint this test exists to prove permits two jurisdictions -- and
+    the cleanup DELETE below is keyed on prompt_version, so reusing the real one would
+    delete the real seeded row as a side effect of this test, not just this test's own
+    fixture.
     """
     template = NoteTemplate(
         jurisdiction=Jurisdiction.PH,
@@ -196,8 +196,8 @@ async def test_us_templates_require_diarization_and_ph_templates_do_not(
 
     A US home visit has two to four speakers and a mis-attributed quote is a
     fabrication. A PH spoken recap has one speaker, so paying for diarization on a
-    monologue buys nothing. Both halves are asserted now that the PH rows exist --
-    the US-only check was all Task 3 could write, since no PH row existed yet.
+    monologue buys nothing. Both halves are asserted now that the PH rows exist to
+    assert against.
     """
     us_soapie = (
         await session.execute(
@@ -219,9 +219,9 @@ async def test_us_templates_require_diarization_and_ph_templates_do_not(
 async def test_resolution_is_scoped_to_the_jurisdiction(session: AsyncSession) -> None:
     """The whole point of the dimension: same format, different row.
 
-    Seeded PH templates arrive in Task 8; this asserts the US side resolves correctly
-    and that asking for a jurisdiction with no row returns None rather than another
-    jurisdiction's template.
+    Asserts the US side resolves correctly, and that asking for a jurisdiction with no
+    row -- PH has none for shift_note, a US home-care format -- returns None rather
+    than another jurisdiction's template.
     """
     repository = NoteTemplateRepository(session)
 

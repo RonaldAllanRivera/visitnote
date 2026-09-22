@@ -54,9 +54,9 @@ behind each design decision.
     `AuthService.update_profile` reconciles a format stranded by a jurisdiction
     change, checked against `note_templates` rather than a hardcoded map so a future
     seeded format needs no code change to become valid.
-  - **Timing.** Task 9 — seeding the PH rows and wiring jurisdiction-aware role
-    defaults, the last task of the phase — took about 15 minutes wall-clock, start
-    to finish. That is the direct evidence behind this phase's central claim: a
+  - **Timing.** Seeding the PH rows and wiring jurisdiction-aware role defaults, the
+    last piece of this phase, took about 15 minutes wall-clock, start to finish. That
+    is the direct evidence behind this phase's central claim: a
     third and fourth note format, across a second regulatory regime, arrived as
     seed data and two prompt modules rather than a pipeline rewrite.
 

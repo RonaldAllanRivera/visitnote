@@ -261,9 +261,9 @@ async def test_the_transcribe_stage_passes_diarize_through_to_the_provider(
     session: AsyncSession, tmp_path: Path
 ) -> None:
     """The plumbing between spec.requires_diarization and the provider call, for both
-    values. PH templates (requires_diarization=False) are not seeded until Task 8, so
-    this drives the stage directly rather than needing a second full visit fixture --
-    _transcribe touches only self.transcription and self.tracer, never the database.
+    values. Driven directly rather than through a second full visit fixture for the
+    False case -- _transcribe touches only self.transcription and self.tracer, never
+    the database.
     """
     fake = FakeTranscriptionProvider()
     pipeline = _pipeline(

@@ -237,15 +237,16 @@ def test_every_ph_prompt_carries_the_shared_rules() -> None:
 #
 # The expected sets below are hardcoded from visitnote-claude-code-prompt-v9.md's
 # Note Formats section (the PH SOAPIE and PH FDAR flag lists), which is the binding
-# authority Task 9 seeds `flag_schema` from. They are hardcoded rather than read from
-# the database because Task 9 has not seeded the PH template rows yet -- this test
-# exists precisely so it is already true once that seeding lands.
+# authority `flag_schema` is seeded from. Hardcoded rather than read from the database
+# on purpose: comparing the prompt against the seeded row would only check the prompt
+# against whatever was seeded, even if seeding itself had drifted from the spec.
+# Comparing against the spec's own text is what actually guards prompt/spec agreement.
 #
-# _PH_SOAPIE_FLAGS excludes UNATTRIBUTED_STATEMENT, which the spec document as
-# originally written still lists (inherited unexamined from US SOAPIE). The
-# coordinator is correcting the spec to match: PH SOAPIE capture is single-speaker by
-# law exactly like PH FDAR, so the code has no path to firing there either. This set
-# reflects the corrected spec, not a stale reading of the current document.
+# _PH_SOAPIE_FLAGS excludes UNATTRIBUTED_STATEMENT, which an earlier draft of the spec
+# inherited unexamined from US SOAPIE. PH SOAPIE capture is single-speaker by law
+# exactly like PH FDAR, so the code has no path to firing there either, and the spec
+# now drops it for that reason (visitnote-claude-code-prompt-v9.md's PH SOAPIE
+# section). This set reflects that corrected spec, not the earlier draft.
 
 _FLAG_TOKEN = re.compile(r"[A-Z][A-Z_]{5,}")
 
@@ -258,9 +259,9 @@ _NOT_A_FLAG = {"SOAPIE"}
 # MISSING_POC_LINK), per the spec's "everything else is retained" -- with one further
 # correction: UNATTRIBUTED_STATEMENT is excluded here too (see
 # _PH_SOAPIE_SUPPRESSED_FLAGS below). The spec originally inherited it unexamined from
-# US SOAPIE; PH SOAPIE capture is single-speaker by law exactly like PH FDAR, so the
-# coordinator corrected the spec rather than leaving the two PH formats inconsistent
-# for no relevant reason.
+# US SOAPIE; PH SOAPIE capture is single-speaker by law exactly like PH FDAR, so there
+# is no relevant reason to leave the two PH formats inconsistent, and the spec is
+# corrected accordingly.
 _PH_SOAPIE_FLAGS = {
     "MISSING_VITALS",
     "MISSING_VISIT_TIMES",
@@ -278,7 +279,7 @@ _PH_SOAPIE_FLAGS = {
 
 # PH FDAR's declared set, exactly as the spec lists it. Does NOT include
 # UNATTRIBUTED_STATEMENT: the spec's own rationale is that a dictated recap has one
-# speaker, so there is nothing to attribute, and Task 9 seeds `flag_schema` from this
+# speaker, so there is nothing to attribute, and `flag_schema` is seeded from this
 # list as written -- declaring a code the engine has no path to ever raising would be
 # its own kind of lie in the schema.
 _PH_FDAR_FLAGS = {
@@ -308,8 +309,8 @@ _PH_FDAR_FLAGS = {
 # impossible in either, and both SYSTEM_PROMPTs explicitly override the shared clause
 # and say why rather than silently inheriting it. The token is still present in the
 # text -- to forbid it -- so it must be accounted for here, but accounting for it as
-# "declared" would hide the fact that neither PH template's flag_schema (Task 9)
-# includes this code. This is not a workaround for unresolved drift; it is what the
+# "declared" would hide the fact that neither PH template's flag_schema includes
+# this code. This is not a workaround for unresolved drift; it is what the
 # override in each ph_*_v1.py module is supposed to produce.
 _PH_SOAPIE_SUPPRESSED_FLAGS = {"UNATTRIBUTED_STATEMENT"}
 _PH_FDAR_SUPPRESSED_FLAGS = {"UNATTRIBUTED_STATEMENT"}

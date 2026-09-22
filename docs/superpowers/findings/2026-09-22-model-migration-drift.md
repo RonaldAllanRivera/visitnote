@@ -34,9 +34,16 @@ matching what its migration created.
 | `users` | `is_demo` | boolean |
 | `users` | `is_active` | boolean |
 
-Note that Phase 4b's own new columns do **not** appear here — `users.jurisdiction`,
-`visits.jurisdiction` and `note_templates.jurisdiction` all declare both `default=` and
-`server_default=`, which is why they are clean. That is the pattern to copy.
+Note that Phase 4b's own new columns do **not** appear here, but not for one shared
+reason. `users.jurisdiction` declares both `default=` and `server_default=`, matching
+migration `0007`, which keeps `server_default='US'` permanently — that is the pattern
+the eleven-column fix above copies. `visits.jurisdiction` and `note_templates.jurisdiction`
+are clean on the opposite pattern: migrations `0009` and `0010` each add a
+`server_default` only to backfill existing rows, then drop it in the same migration, so
+neither column carries one at rest — the model declaring no default matches a database
+that, deliberately, has none either. Copying the `users.jurisdiction` pattern onto these
+two would reintroduce a server default the migrations remove on purpose, so an insert
+with no jurisdiction could pass silently as `'US'` instead of failing loudly.
 
 ## 2. One `remove_constraint` on `users.email`
 

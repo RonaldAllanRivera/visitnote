@@ -73,7 +73,12 @@ def upgrade() -> None:
     # Same jsonb_set-append shape 0011 originally used for this backfill (see that
     # file's git history): read the existing array out, concatenate the one new
     # flag object, and write the result back. `||` on two jsonb arrays concatenates
-    # them rather than merging by key, which is exactly "append" here.
+    # them rather than merging by key, which is exactly "append" here. Guarded by
+    # NOT EXISTS so a re-run -- `alembic upgrade` invoked twice against the same
+    # database, or a downgrade/upgrade cycle that lands here again -- concatenates
+    # the flag once, not once per run: an unguarded append would duplicate it in the
+    # array and therefore in the generated JSON Schema enum, which the model could
+    # then legally emit as two structurally different-looking-but-identical choices.
     connection.execute(
         sa.text(
             """
@@ -84,6 +89,10 @@ def upgrade() -> None:
                 (flag_schema -> 'flags') || CAST(:new_flag AS jsonb)
             )
             WHERE jurisdiction = 'US' AND format IN ('shift_note', 'soapie') AND version = 1
+              AND NOT EXISTS (
+                  SELECT 1 FROM jsonb_array_elements(flag_schema -> 'flags') AS flag
+                  WHERE flag ->> 'code' = 'PATIENT_IDENTIFIER_DETECTED'
+              )
             """
         ),
         {

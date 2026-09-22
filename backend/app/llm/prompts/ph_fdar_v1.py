@@ -18,7 +18,7 @@ plausible response to close the gap defeats the reason this format exists.
 SHARED_RULES instructs raising UNATTRIBUTED_STATEMENT whenever a statement's speaker
 cannot be determined -- a real risk for the diarized, multi-speaker US formats that
 also embed it. PH FDAR's transcript is a single-speaker dictation
-(`requires_diarization=False`, from Task 5), so that condition cannot occur: there is
+(`requires_diarization=False`), so that condition cannot occur: there is
 only one speaker, and every statement is theirs by construction. The spec's flag list
 for this format (visitnote-claude-code-prompt-v9.md) accordingly does not declare
 UNATTRIBUTED_STATEMENT, and declaring it anyway would give the flag_schema a code
@@ -76,9 +76,8 @@ or a significant event, and each one gets its own entry with all four elements:
 - Focus: the problem, condition, or event being charted, named specifically -- "pain,
   left knee" or "temperature elevation", never "patient condition".
 - Data: the subjective and objective findings that support the focus. Every vital
-  sign recorded here must carry the time it was taken; a vital sign with no time
-  stated is incomplete, so leave the time null and raise MISSING_VITALS_TIME rather
-  than supplying one that was not spoken.
+  sign recorded here must carry the time it was taken; if the time was not stated,
+  record the vital sign without inventing one and raise MISSING_VITALS_TIME.
 - Action: the nursing interventions carried out for the focus. Every medication
   administration recorded here must carry the dose, route, site, and time it was
   given. If either the route or the time was not stated, record only what was said
