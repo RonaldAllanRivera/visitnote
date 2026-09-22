@@ -34,17 +34,20 @@ behind each design decision.
     `SHARED_RULES`' unattributed-statement instruction: PH capture is
     `spoken_recap` only, so the transcript is always single-speaker and the
     condition that flag guards against cannot occur.
-  - `PATIENT_IDENTIFIER_DETECTED` (critical), **on the two PH templates**: a nurse
-    speaking a patient's real name aloud is caught and stripped before it reaches a
-    stored note, whatever the pseudonymous label scheme in use. Declared *and*
-    instructed — `ph_soapie_v1` and `ph_fdar_v1` both carry the redaction rule,
-    because a flag the prompt never asks for produces a clean note rather than a
-    finding. **Not yet on the US templates**: `shift_note_v1` and `soapie_v1` are
-    immutable modules with no redaction instruction, so US coverage waits on
-    `shift_note_v2` / `soapie_v2`. The control is real where it is claimed and absent
-    where it is not.
+  - `PATIENT_IDENTIFIER_DETECTED` (critical), **on all four active templates**: a
+    nurse or caregiver speaking a patient's or client's real name aloud is caught and
+    stripped before it reaches a stored note, whatever the pseudonymous label scheme
+    in use. Declared *and* instructed on every one — `ph_soapie_v1` and `ph_fdar_v1`
+    carried the redaction rule from the start; `shift_note_v2` and `soapie_v2` add it
+    for the two US templates, since `shift_note_v1` and `soapie_v1` are immutable
+    modules and a change to their instructions has to be a new version rather than an
+    edit. A flag the prompt never asks for would produce a clean note rather than a
+    finding, so the code went onto the US rows only once a prompt version existed to
+    request it.
   - Seed migration `0011` adds the `(PH, soapie, 1)` and `(PH, fdar, 1)` template
-    rows. It deliberately leaves the two US rows alone; see the note above.
+    rows. Migration `0012` repoints the two US rows onto `shift_note_v2` /
+    `soapie_v2` and appends `PATIENT_IDENTIFIER_DETECTED` to their `flag_schema`, the
+    same description text the PH rows use.
   - `default_format_for(jurisdiction, role)` replaces the old role-only lookup —
     role alone cannot pick a format once jurisdiction is also an axis (a Manila
     ward RN charts FDAR, a US home-health RN charts SOAPIE) — and

@@ -191,7 +191,7 @@ async def test_the_same_pipeline_generates_a_soapie_note(
         await session.execute(select(Note).where(Note.visit_id == visit.id))
     ).scalar_one()
     assert note.format == NoteFormat.SOAPIE
-    assert note.prompt_version == "soapie_v1"
+    assert note.prompt_version == "soapie_v2"
 
 
 async def test_the_transcript_is_stored_as_speaker_turns(

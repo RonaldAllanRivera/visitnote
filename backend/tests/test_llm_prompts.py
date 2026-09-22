@@ -314,13 +314,60 @@ _PH_FDAR_FLAGS = {
 _PH_SOAPIE_SUPPRESSED_FLAGS = {"UNATTRIBUTED_STATEMENT"}
 _PH_FDAR_SUPPRESSED_FLAGS = {"UNATTRIBUTED_STATEMENT"}
 
+# US Shift Note's declared set (0002_seed_note_templates.py's SHIFT_NOTE_FLAGS), plus
+# PATIENT_IDENTIFIER_DETECTED -- appended to the template row by migration 0012, the
+# same migration that repoints this format onto shift_note_v2, the prompt version
+# that actually instructs it.
+_SHIFT_NOTE_V2_FLAGS = {
+    "MISSING_SHIFT_TIMES",
+    "UNREPORTED_CHANGE",
+    "MISSING_ADLS",
+    "MISSING_MEDS",
+    "MISSING_INTAKE",
+    "MISSING_HANDOVER",
+    "INCOMPLETE_TASK_UNEXPLAINED",
+    "VAGUE_LANGUAGE",
+    "UNATTRIBUTED_STATEMENT",
+    "NOTE_CONTAINS_VENTING",
+    "PATIENT_IDENTIFIER_DETECTED",
+}
+
+# US SOAPIE's declared set (0002_seed_note_templates.py's SOAPIE_FLAGS), plus
+# PATIENT_IDENTIFIER_DETECTED for the same reason as above.
+_SOAPIE_V2_FLAGS = {
+    "MISSING_VITALS",
+    "MISSING_VISIT_TIMES",
+    "MISSING_SKILLED_SERVICE",
+    "MISSING_NECESSITY_RATIONALE",
+    "MISSING_HOMEBOUND",
+    "UNREPORTED_CHANGE",
+    "MISSING_RESPONSE",
+    "MISSING_MED_REVIEW",
+    "MISSING_POC_LINK",
+    "MISSING_NEXT_VISIT_PLAN",
+    "MISSING_COORDINATION",
+    "VAGUE_LANGUAGE",
+    "UNATTRIBUTED_STATEMENT",
+    "MISSING_EDUCATION_RESPONSE",
+    "MISSING_PAIN_ASSESSMENT",
+    "PATIENT_IDENTIFIER_DETECTED",
+}
+
 _EXPECTED_FLAGS_BY_VERSION = {
     "ph_soapie_v1": _PH_SOAPIE_FLAGS | _PH_SOAPIE_SUPPRESSED_FLAGS,
     "ph_fdar_v1": _PH_FDAR_FLAGS | _PH_FDAR_SUPPRESSED_FLAGS,
+    "shift_note_v2": _SHIFT_NOTE_V2_FLAGS,
+    "soapie_v2": _SOAPIE_V2_FLAGS,
 }
 
 
-def test_ph_prompts_name_only_flag_codes_their_template_will_declare() -> None:
+def test_prompts_name_only_flag_codes_their_template_will_declare() -> None:
+    """Covers every prompt version whose declared flag set is known statically here.
+
+    v1's two US modules are deliberately not included: the flag-drift risk this guard
+    exists for is new-and-wrong, not established-and-unchanged, and v1 is immutable
+    text that already shipped. v2 carries the one new code this phase adds.
+    """
     for version, expected in _EXPECTED_FLAGS_BY_VERSION.items():
         tokens = set(_FLAG_TOKEN.findall(get_prompt(version).system_prompt)) - _NOT_A_FLAG
         undeclared = tokens - expected

@@ -292,45 +292,36 @@ async def test_ph_soapie_section_descriptions_drop_cms_framing(session: AsyncSes
         assert phrase in us_descriptions[key], (key, us_descriptions[key])
 
 
-async def test_ph_templates_flag_a_spoken_patient_identifier(
+async def test_all_active_templates_flag_a_spoken_patient_identifier(
     session: AsyncSession,
 ) -> None:
     """A pseudonymous label never de-identified the audio; this is what enforces it.
 
-    Scoped to PH because a declared flag is only half of the control: the prompt has
-    to ask for it. `ph_soapie_v1` and `ph_fdar_v1` both carry the redaction
-    instruction; `shift_note_v1` and `soapie_v1` do not, and they are immutable
-    modules. Declaring the code on the US rows would put it in the generation schema
-    with nothing ever requesting it, which yields a clean note instead of a
-    missing-control finding. US coverage arrives with the v2 prompt modules.
+    Every active template now declares the code and its prompt module instructs it:
+    `ph_soapie_v1` and `ph_fdar_v1` carried the redaction instruction from the start;
+    `shift_note_v2` and `soapie_v2` add it for the two US rows. A declared flag with
+    no prompt asking for it would be worse than an absent one -- a clean note reads
+    as a pass rather than a missing-control finding -- so this checks both templates
+    per jurisdiction, not just the PH pair. Also asserts all four use the same
+    description text: migration 0012 was written to copy 0011's PH wording exactly
+    rather than restate it, and a divergent US description would mean the same flag
+    code documents two different things depending on jurisdiction.
     """
     repository = NoteTemplateRepository(session)
-    for note_format in (NoteFormat.SOAPIE, NoteFormat.FDAR):
-        template = await repository.get_active(Jurisdiction.PH, note_format)
-        assert template is not None, note_format
-        codes = {f["code"] for f in template.flag_schema["flags"]}
-        assert "PATIENT_IDENTIFIER_DETECTED" in codes, template.prompt_version
+    descriptions: set[str] = set()
+    for jurisdiction, note_format in (
+        (Jurisdiction.US, NoteFormat.SHIFT_NOTE),
+        (Jurisdiction.US, NoteFormat.SOAPIE),
+        (Jurisdiction.PH, NoteFormat.SOAPIE),
+        (Jurisdiction.PH, NoteFormat.FDAR),
+    ):
+        template = await repository.get_active(jurisdiction, note_format)
+        assert template is not None, (jurisdiction, note_format)
+        flags = {f["code"]: f for f in template.flag_schema["flags"]}
+        assert "PATIENT_IDENTIFIER_DETECTED" in flags, template.prompt_version
+        descriptions.add(flags["PATIENT_IDENTIFIER_DETECTED"]["description"])
 
-
-async def test_us_templates_do_not_yet_declare_the_identifier_flag(
-    session: AsyncSession,
-) -> None:
-    """The deferral, asserted rather than assumed.
-
-    This test should fail -- loudly, and with a pointer to the reason -- the moment
-    someone declares the code on a US row without also shipping a prompt that asks
-    for it. Delete it when `shift_note_v2` / `soapie_v2` land.
-    """
-    repository = NoteTemplateRepository(session)
-    for note_format in (NoteFormat.SHIFT_NOTE, NoteFormat.SOAPIE):
-        template = await repository.get_active(Jurisdiction.US, note_format)
-        assert template is not None, note_format
-        codes = {f["code"] for f in template.flag_schema["flags"]}
-        assert "PATIENT_IDENTIFIER_DETECTED" not in codes, (
-            f"{template.prompt_version} declares PATIENT_IDENTIFIER_DETECTED but the US "
-            "prompt modules carry no redaction instruction -- ship shift_note_v2 / "
-            "soapie_v2 first, then delete this test."
-        )
+    assert len(descriptions) == 1, descriptions
 
 
 async def test_ph_fdar_has_a_repeating_focus_section(session: AsyncSession) -> None:
