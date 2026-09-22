@@ -42,6 +42,10 @@ async def _visit(client: AsyncClient, headers: dict[str, str]) -> str:
             "client_id": care_recipient,
             "capture_mode": "spoken_recap",
             "idempotency_key": str(uuid.uuid4()),
+            # This account never completes onboarding, so it has no default note
+            # format; these tests exercise upload mechanics, not format resolution,
+            # so a format valid for the (default US) jurisdiction is supplied explicitly.
+            "note_format": "shift_note",
         },
     )
     return response.json()["id"]

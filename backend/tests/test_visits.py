@@ -345,3 +345,94 @@ async def test_replaying_a_key_returns_the_existing_visit_even_for_a_now_prohibi
     )
     assert replay.status_code in (200, 201)
     assert replay.json()["id"] == first["id"]
+
+
+# -- note format validation -------------------------------------------------------
+
+
+async def _stranded_account(client: AsyncClient, jurisdiction: str = "PH") -> dict[str, str]:
+    """A user who abandoned onboarding before naming a role: no default format set."""
+    body = (
+        await client.post(
+            "/api/v1/auth/register", json={"email": _email(), "password": PASSWORD}
+        )
+    ).json()
+    headers = {"Authorization": f"Bearer {body['access_token']}"}
+    await client.patch("/api/v1/auth/me", headers=headers, json={"jurisdiction": jurisdiction})
+    return headers
+
+
+async def test_a_stranded_ph_user_cannot_open_a_visit_with_no_note_format(
+    client: AsyncClient,
+) -> None:
+    """Neither an explicit format nor a default is present: that is an error, not a
+    fallback to a US-only format PH seeds no template for.
+
+    Before this guard, the unresolved format silently fell back to shift_note, the
+    visit was accepted, a quota unit was spent, and generation died non-retryably
+    minutes later for a mistake made here.
+    """
+    headers = await _stranded_account(client)
+    response = await client.post(
+        "/api/v1/visits",
+        headers=headers,
+        json=_payload(await _client_record(client, headers)),
+    )
+    assert response.status_code == 422
+
+
+async def test_a_stranded_us_user_cannot_open_a_visit_with_no_note_format(
+    client: AsyncClient,
+) -> None:
+    headers = await _stranded_account(client, jurisdiction="US")
+    response = await client.post(
+        "/api/v1/visits",
+        headers=headers,
+        json=_payload(await _client_record(client, headers)),
+    )
+    assert response.status_code == 422
+
+
+async def test_a_ph_user_cannot_explicitly_request_a_us_only_format(
+    client: AsyncClient,
+) -> None:
+    """PH seeds no shift_note template; posting it explicitly must not bypass the guard
+    that a stranded default is already refused by."""
+    headers = await _account(client, timezone="Asia/Manila")
+    response = await client.post(
+        "/api/v1/visits",
+        headers=headers,
+        json=_payload(await _client_record(client, headers), note_format="shift_note"),
+    )
+    assert response.status_code == 422
+
+
+async def test_a_us_user_cannot_explicitly_request_a_ph_only_format(
+    client: AsyncClient,
+) -> None:
+    headers = await _account(client, timezone="America/Los_Angeles")
+    response = await client.post(
+        "/api/v1/visits",
+        headers=headers,
+        json=_payload(await _client_record(client, headers), note_format="fdar"),
+    )
+    assert response.status_code == 422
+
+
+async def test_replaying_a_key_returns_the_existing_visit_even_for_a_now_unsupported_format(
+    client: AsyncClient,
+) -> None:
+    """The format guard runs at creation, not on every read of an idempotency key.
+
+    A user who changes jurisdiction after opening a visit must still get that visit
+    back on retry -- the same argument idempotency already makes for capture mode.
+    """
+    headers = await _account(client, timezone="Asia/Manila")
+    payload = _payload(await _client_record(client, headers), note_format="fdar")
+    first = await _create(client, headers, payload)
+
+    await client.patch("/api/v1/auth/me", headers=headers, json={"jurisdiction": "US"})
+
+    replay = await client.post("/api/v1/visits", headers=headers, json=payload)
+    assert replay.status_code in (200, 201)
+    assert replay.json()["id"] == first["id"]

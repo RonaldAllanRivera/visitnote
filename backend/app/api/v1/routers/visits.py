@@ -26,7 +26,12 @@ from app.services.uploads import (
     UploadService,
     UploadStateError,
 )
-from app.services.visits import ProhibitedCaptureModeError, UnknownClientError, VisitService
+from app.services.visits import (
+    ProhibitedCaptureModeError,
+    UnknownClientError,
+    UnsupportedNoteFormatError,
+    VisitService,
+)
 from app.storage import StorageProvider, get_storage_provider
 
 router = APIRouter(prefix="/visits", tags=["visits"])
@@ -50,6 +55,10 @@ async def create_visit(
     except ProhibitedCaptureModeError as exc:
         # HTTP_422_UNPROCESSABLE_ENTITY is deprecated in this Starlette version (and
         # this repo turns warnings into test failures); _CONTENT is the same status.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.reason
+        ) from exc
+    except UnsupportedNoteFormatError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.reason
         ) from exc

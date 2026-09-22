@@ -6,8 +6,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ConsentLog, User, Visit
-from app.models.enums import CaptureMode, Jurisdiction, NoteFormat
+from app.models.enums import CaptureMode, Jurisdiction
 from app.repositories.clients import ClientRepository
+from app.repositories.note_templates import NoteTemplateRepository
 from app.repositories.visits import VisitRepository
 from app.schemas.visit import VisitCreate
 
@@ -41,6 +42,21 @@ class ProhibitedCaptureModeError(Exception):
         self.reason = reason
 
 
+class UnsupportedNoteFormatError(Exception):
+    """No active template exists for this user's jurisdiction and note format.
+
+    Covers both an unresolved format -- neither the payload nor the account's
+    default named one -- and a resolved format this jurisdiction seeds no template
+    for. Either way the pipeline would have nothing to render against, so this is
+    refused at creation rather than accepted and left to fail non-retryably in
+    `Pipeline._template` after a quota unit is already spent.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 @dataclass(slots=True)
 class VisitService:
     session: AsyncSession
@@ -57,6 +73,24 @@ class VisitService:
         if existing is not None:
             return existing, False
 
+        # Resolve from the explicit payload, else the account's default. Unlike the
+        # capture-mode and client checks below, there is no hardcoded fallback here:
+        # a US format is not a safe default for a PH account, so an unresolved format
+        # is an error, not a guess.
+        note_format = payload.note_format or user.default_note_format
+        template = (
+            None
+            if note_format is None
+            else await NoteTemplateRepository(self.session).get_active(
+                user.jurisdiction, note_format
+            )
+        )
+        if template is None:
+            raise UnsupportedNoteFormatError(
+                f"No active note template exists for jurisdiction {user.jurisdiction} and "
+                f"format {note_format}. Choose a format this jurisdiction supports."
+            )
+
         prohibited = PROHIBITED_CAPTURE_MODES.get(user.jurisdiction)
         if prohibited is not None and payload.capture_mode is prohibited[0]:
             raise ProhibitedCaptureModeError(prohibited[1])
@@ -72,9 +106,7 @@ class VisitService:
                 user_id=user.id,
                 client_id=care_recipient.id,
                 jurisdiction=user.jurisdiction,
-                note_format=payload.note_format
-                or user.default_note_format
-                or NoteFormat.SHIFT_NOTE,
+                note_format=note_format,
                 capture_mode=payload.capture_mode,
                 # Copied onto the visit rather than read from the user later: a user
                 # who moves must not retro-date the notes they have already written.
