@@ -262,6 +262,36 @@ async def test_ph_soapie_drops_the_three_cms_only_flags(session: AsyncSession) -
     assert cms_only.isdisjoint(ph_codes)
 
 
+async def test_ph_soapie_section_descriptions_drop_cms_framing(session: AsyncSession) -> None:
+    """`json_schema_for()` puts every `section.description` into the schema the
+    provider is constrained on, so a CMS concept surviving here reaches the model
+    through a channel no amount of careful prompt wording can block --
+    MISSING_NECESSITY_RATIONALE and MISSING_POC_LINK were deliberately dropped from
+    PH SOAPIE's flag set, so PH-flavoured necessity or plan-of-care content invented
+    to satisfy a description that still asked for it would go unflagged.
+
+    US SOAPIE's descriptions are asserted unchanged in the same test, not a separate
+    one, so a fix that "cleans up" the shared wording instead of only the PH row
+    fails loudly here rather than shipping quietly.
+    """
+    repository = NoteTemplateRepository(session)
+    us = await repository.get_active(Jurisdiction.US, NoteFormat.SOAPIE)
+    ph = await repository.get_active(Jurisdiction.PH, NoteFormat.SOAPIE)
+    assert us is not None and ph is not None
+
+    ph_descriptions = {s["key"]: s["description"] for s in ph.section_schema["sections"]}
+    us_descriptions = {s["key"]: s["description"] for s in us.section_schema["sections"]}
+
+    cms_phrases = {
+        "intervention": "licensed nurse",
+        "plan": "skilled care",
+        "evaluation": "plan-of-care",
+    }
+    for key, phrase in cms_phrases.items():
+        assert phrase not in ph_descriptions[key], (key, ph_descriptions[key])
+        assert phrase in us_descriptions[key], (key, us_descriptions[key])
+
+
 async def test_ph_templates_flag_a_spoken_patient_identifier(
     session: AsyncSession,
 ) -> None:

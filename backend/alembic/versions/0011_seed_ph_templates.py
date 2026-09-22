@@ -100,8 +100,16 @@ _PATIENT_IDENTIFIER_DESCRIPTION = (
 )
 
 # PH SOAPIE carries nine of US SOAPIE's ten sections -- homebound status has no
-# Philippine analogue -- with identical text for every section that is retained, so
-# the two templates read as the same format rather than independently drifting copies.
+# Philippine analogue. Every retained section keeps US SOAPIE's text verbatim except
+# intervention, plan and evaluation, which US phrases in CMS survey and Medicare-claim
+# terms (necessity for a licensed nurse, ongoing need for skilled care, progress
+# toward plan-of-care goals) that have no PhilHealth analogue either. json_schema_for()
+# puts every description into the schema the provider is constrained on, so carrying
+# those terms here -- even unreferenced by the prompt -- would hand the model a
+# concept it could invent PH-flavoured content to satisfy, with
+# MISSING_NECESSITY_RATIONALE and MISSING_POC_LINK both absent from this format's
+# flag set to catch it. See ph_soapie_v1.py's docstring for the same reasoning applied
+# to the prompt text.
 PH_SOAPIE_SECTIONS = _sections(
     (
         "visit_details",
@@ -127,19 +135,18 @@ PH_SOAPIE_SECTIONS = _sections(
     (
         "plan",
         "Plan",
-        "Plan for the next visit with rationale, discharge trajectory, ongoing need for "
-        "skilled care.",
+        "Plan for the next visit, with rationale and discharge trajectory.",
     ),
     (
         "intervention",
         "Intervention",
-        "Skilled services performed and why each required a licensed nurse.",
+        "Skilled nursing services performed, described with enough clinical detail to "
+        "stand as a nursing record.",
     ),
     (
         "evaluation",
         "Evaluation",
-        "Patient or caregiver response to interventions, measurable where possible; "
-        "progress toward plan-of-care goals.",
+        "Patient or caregiver response to interventions, measurable where possible.",
     ),
     (
         "coordination_of_care",
