@@ -70,6 +70,22 @@ async def test_a_new_visit_starts_in_the_recording_state(client: AsyncClient) ->
     assert visit["status"] == "recording"
 
 
+async def test_a_freshly_registered_account_can_create_a_visit(client: AsyncClient) -> None:
+    """The web app has no onboarding UI, so every real account creates its first
+    visit in exactly this state: registered, never onboarded, no note_format in the
+    payload. Registration must leave a resolvable default or this is the product's
+    only flow, broken for everyone.
+    """
+    body = (
+        await client.post(
+            "/api/v1/auth/register", json={"email": _email(), "password": PASSWORD}
+        )
+    ).json()
+    headers = {"Authorization": f"Bearer {body['access_token']}"}
+    visit = await _create(client, headers, _payload(await _client_record(client, headers)))
+    assert visit["note_format"] == "shift_note"
+
+
 async def test_visit_defaults_to_the_users_note_format(client: AsyncClient) -> None:
     """An RN gets SOAPIE without having to choose it on every visit."""
     headers = await _account(client)
@@ -351,7 +367,13 @@ async def test_replaying_a_key_returns_the_existing_visit_even_for_a_now_prohibi
 
 
 async def _stranded_account(client: AsyncClient, jurisdiction: str = "PH") -> dict[str, str]:
-    """A user who abandoned onboarding before naming a role: no default format set."""
+    """A user who abandoned onboarding before naming a role.
+
+    Registration already seeded a US-valid default (RoleTitle.OTHER's), so naming a
+    role is what is missing here, not the default itself: with no role_title, the
+    stranded-format reconciliation in `update_profile` has nothing to re-derive from,
+    so a jurisdiction change alone can leave the inherited default invalid for it.
+    """
     body = (
         await client.post(
             "/api/v1/auth/register", json={"email": _email(), "password": PASSWORD}
@@ -365,12 +387,12 @@ async def _stranded_account(client: AsyncClient, jurisdiction: str = "PH") -> di
 async def test_a_stranded_ph_user_cannot_open_a_visit_with_no_note_format(
     client: AsyncClient,
 ) -> None:
-    """Neither an explicit format nor a default is present: that is an error, not a
+    """The inherited US default does not resolve in PH, and that is an error, not a
     fallback to a US-only format PH seeds no template for.
 
-    Before this guard, the unresolved format silently fell back to shift_note, the
-    visit was accepted, a quota unit was spent, and generation died non-retryably
-    minutes later for a mistake made here.
+    Before the guard this reconciliation feeds, the unresolved format silently fell
+    back to shift_note, the visit was accepted, a quota unit was spent, and
+    generation died non-retryably minutes later for a mistake made here.
     """
     headers = await _stranded_account(client)
     response = await client.post(
@@ -381,16 +403,15 @@ async def test_a_stranded_ph_user_cannot_open_a_visit_with_no_note_format(
     assert response.status_code == 422
 
 
-async def test_a_stranded_us_user_cannot_open_a_visit_with_no_note_format(
+async def test_a_role_less_us_account_is_never_stranded_on_its_own_jurisdiction(
     client: AsyncClient,
 ) -> None:
+    """Unlike the PH case above, reasserting the jurisdiction a role-less account
+    already registered under cannot strand it: registration's default was already
+    valid for US, and nothing here changes it."""
     headers = await _stranded_account(client, jurisdiction="US")
-    response = await client.post(
-        "/api/v1/visits",
-        headers=headers,
-        json=_payload(await _client_record(client, headers)),
-    )
-    assert response.status_code == 422
+    visit = await _create(client, headers, _payload(await _client_record(client, headers)))
+    assert visit["note_format"] == "shift_note"
 
 
 async def test_a_ph_user_cannot_explicitly_request_a_us_only_format(

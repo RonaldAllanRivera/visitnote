@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.core.jurisdiction import jurisdiction_for_timezone
 from app.core.security import create_access_token, hash_password, needs_rehash, verify_password
 from app.models import User
+from app.models.enums import RoleTitle
 from app.repositories.note_templates import NoteTemplateRepository
 from app.repositories.users import UserRepository
 from app.schemas.auth import OnboardingRequest, TokenPair, default_format_for
@@ -63,6 +64,14 @@ class AuthService:
 
         user = User(email=email.lower(), password_hash=hash_password(password))
         self.users.add(user)
+        # Flush (not commit) so the column default populates user.jurisdiction before
+        # it is read below -- the ORM default is applied on flush, not at construction.
+        await self.session.flush()
+        # A format is required to create a visit, and onboarding is optional, so an
+        # account must leave registration with one already resolved. RoleTitle.OTHER
+        # is the honest role for an account that has not onboarded yet; onboarding's
+        # stranded-format reconciliation re-derives this once a real role is set.
+        user.default_note_format = default_format_for(user.jurisdiction, RoleTitle.OTHER)
         await self.session.commit()
         await self.session.refresh(user)
 

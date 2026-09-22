@@ -10,6 +10,19 @@ import { useRecorder } from '@/lib/useRecorder'
 type CaptureMode = 'live_audio' | 'spoken_recap'
 
 /**
+ * Visit creation's 422s (an unsupported note format, the RA 4200 capture-mode
+ * refusal) carry a plain-string `detail`, but the generated type says `detail` is a
+ * list of validation errors -- FastAPI's OpenAPI export always shapes 422 that way,
+ * regardless of what a route's own HTTPException actually sends. Read it as unknown
+ * rather than trust the generated shape, so the reason reaches the user instead of
+ * being thrown away.
+ */
+function detailMessage(error: unknown, fallback: string): string {
+  const detail = (error as { detail?: unknown } | null | undefined)?.detail
+  return typeof detail === 'string' ? detail : fallback
+}
+
+/**
  * Capture: choose who and how, acknowledge consent, record, upload.
  *
  * The consent gate is presented as a step rather than a checkbox in a corner because
@@ -57,7 +70,9 @@ export function NewVisit() {
           consent_acknowledged: consented,
         },
       })
-      if (visit.error ?? !visit.data) throw new Error('Could not open the visit')
+      if (visit.error ?? !visit.data) {
+        throw new Error(detailMessage(visit.error, 'Could not open the visit'))
+      }
       const visitId = visit.data.id
 
       const ticket = await api.POST('/api/v1/visits/{visit_id}/upload', {
