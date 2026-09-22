@@ -265,6 +265,7 @@ class Pipeline:
         with self.tracer.span(
             "generate",
             trace_id=trace_id,
+            jurisdiction=spec.jurisdiction.value,
             prompt_version=spec.prompt_version,
             llm_provider=spec.llm_provider,
             model_id=spec.model_id,

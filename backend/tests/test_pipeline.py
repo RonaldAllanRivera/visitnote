@@ -596,6 +596,24 @@ async def test_a_redacted_trace_still_carries_the_flag_codes(
     assert generate.attributes["flag_codes"] == ["MISSING_MEDS"]
 
 
+async def test_the_generate_span_carries_the_templates_jurisdiction(
+    session: AsyncSession, audio_bytes: bytes
+) -> None:
+    """`TemplateSpec.jurisdiction` is set at `from_template` but otherwise unread --
+    `eval_runs.jurisdiction` will want it once the eval phase exists, and a field
+    nothing reads is how this project has lost track of a value before."""
+    visit = await _visit(session)
+    llm = FakeLLMProvider(responses=[_generation(SHIFT_SECTIONS, [])])
+    tracer = RecordingTracer(redact_content=True)
+
+    await _pipeline(
+        session, storage=await _stocked_storage(visit, audio_bytes), llm=llm, tracer=tracer
+    ).run(visit.id)
+
+    generate = next(span for span in tracer.spans if span.name == "generate")
+    assert generate.attributes["jurisdiction"] == "US"
+
+
 async def test_a_redacted_trace_carries_no_transcript_text(
     session: AsyncSession, audio_bytes: bytes
 ) -> None:
