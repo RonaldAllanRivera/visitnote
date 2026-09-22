@@ -90,12 +90,31 @@ def render_transcript(
     turns: list[TranscriptTurn] | tuple[TranscriptTurn, ...],
     *,
     recording_speaker: str | None,
+    diarized: bool,
 ) -> str:
-    """The user content: speaker roles first, then the diarized turns.
+    """The user content: speaker roles first, then the transcript's turns.
 
     Roles come first because they change how every line below them must be read.
+
+    `diarized` must come from the template (`spec.requires_diarization`), never be
+    inferred by counting distinct speaker labels in `turns`. A recording with one
+    speaker label is ambiguous on its own: it is what a single-speaker dictated
+    recap looks like, but it is equally what a diarized US home visit looks like
+    when the patient never speaks -- and that second case must still carry the
+    attribution caution below. Only the template says which one this is.
     """
-    if recording_speaker is None:
+    if not diarized:
+        # A dictated recap has no second party for a statement to be unattributable
+        # to, so the caution below does not apply -- and the flag it would ask for
+        # is not even declared for this kind of template. Naming it here anyway
+        # would ask the model for a code its own schema then rejects.
+        roles = (
+            "SPEAKER ROLES\n"
+            "This is a single-speaker dictated recap: the nurse speaking aloud "
+            "afterward to record the visit, not a live conversation with anyone "
+            "else. Every statement in it is the nurse's own by construction."
+        )
+    elif recording_speaker is None:
         roles = (
             "SPEAKER ROLES\n"
             "The speaker who made this recording could not be determined. Do not guess "

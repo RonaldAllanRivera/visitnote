@@ -120,7 +120,7 @@ def test_each_turn_is_rendered_with_its_speaker_and_start_time() -> None:
         _turn("speaker_1", "Badly.", 3_500, 5_000),
     ]
 
-    rendered = render_transcript(turns, recording_speaker="speaker_0")
+    rendered = render_transcript(turns, recording_speaker="speaker_0", diarized=True)
 
     assert "speaker_0" in rendered
     assert "How did you sleep?" in rendered
@@ -130,7 +130,7 @@ def test_each_turn_is_rendered_with_its_speaker_and_start_time() -> None:
 def test_the_recording_user_is_identified_when_it_is_known() -> None:
     turns = [_turn("speaker_0", "Starting the visit.", 0, 4_000)]
 
-    rendered = render_transcript(turns, recording_speaker="speaker_0")
+    rendered = render_transcript(turns, recording_speaker="speaker_0", diarized=True)
 
     assert "speaker_0 is the caregiver or nurse" in rendered
 
@@ -142,9 +142,58 @@ def test_an_unknown_recording_user_produces_an_explicit_instruction_not_silence(
         _turn("speaker_1", "My hip aches badly all night long.", 1_000, 20_000),
     ]
 
-    rendered = render_transcript(turns, recording_speaker=None)
+    rendered = render_transcript(turns, recording_speaker=None, diarized=True)
 
     assert "could not be determined" in rendered
+    assert "UNATTRIBUTED_STATEMENT" in rendered
+
+
+def test_diarized_is_required_with_no_default() -> None:
+    """Matches the precedent `TranscriptionProvider.transcribe(*, diarize: bool)`
+    already set: the mode must come from the template, never a silently-assumed
+    default, because the wrong default is exactly what would revive this finding.
+    """
+    import inspect
+
+    parameter = inspect.signature(render_transcript).parameters["diarized"]
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameter.default is inspect.Parameter.empty
+
+
+def test_non_diarized_omits_unattributed_statement_even_with_no_speaker_inference() -> None:
+    """The bug this finding names: a PH request's user content must never ask for a
+    code that PH's flag_schema does not declare, no matter what recording-speaker
+    inference concludes. Passing `recording_speaker=None` here on purpose -- a real
+    single-speaker transcript can still fail to produce a confident inference, and
+    the omission must not depend on that succeeding.
+    """
+    turns = [_turn("speaker_0", "Patient seen for wound care follow-up.", 0, 12_000)]
+
+    rendered = render_transcript(turns, recording_speaker=None, diarized=False)
+
+    assert "UNATTRIBUTED_STATEMENT" not in rendered
+    assert "single-speaker" in rendered.lower() or "single speaker" in rendered.lower()
+
+
+def test_a_non_diarized_transcript_states_every_statement_is_attributable_by_construction() -> None:
+    turns = [_turn("speaker_0", "Dressing changed, site clean and dry.", 0, 8_000)]
+
+    rendered = render_transcript(turns, recording_speaker="speaker_0", diarized=False)
+
+    assert "UNATTRIBUTED_STATEMENT" not in rendered
+    assert "nurse" in rendered.lower()
+
+
+def test_a_single_speaker_diarized_transcript_still_keeps_unattributed_statement() -> None:
+    """The trap this finding warns against: a US visit where the patient never
+    speaks has exactly one distinct speaker label, same as a PH dictation, but it is
+    still diarized multi-speaker capture and must keep the attribution caution. The
+    mode must come from `diarized`, never from counting speakers in the turns.
+    """
+    turns = [_turn("speaker_0", "Good morning, I'm here for your visit.", 0, 4_000)]
+
+    rendered = render_transcript(turns, recording_speaker="speaker_0", diarized=True)
+
     assert "UNATTRIBUTED_STATEMENT" in rendered
 
 
@@ -300,3 +349,24 @@ def test_ph_prompts_override_shared_rules_to_forbid_unattributed_statement() -> 
         first_mention = prompt.index("UNATTRIBUTED_STATEMENT")
         override_mention = prompt.index("Never raise UNATTRIBUTED_STATEMENT")
         assert override_mention > first_mention
+
+
+def test_the_flag_code_guard_also_covers_the_rendered_user_content() -> None:
+    """The audit this guard exists to replace read only `SYSTEM_PROMPT`, and so did
+    the guard test above it -- which is exactly why a PH request could carry
+    UNATTRIBUTED_STATEMENT in its **user** content while the system prompt forbade
+    it: `render_transcript` builds that content, and nothing scanning only the
+    system prompt could ever see it. Both PH templates are `requires_diarization =
+    False`, which is what the pipeline actually reads to decide `diarized` here --
+    not a stand-in choice made by this test.
+    """
+    turns = [_turn("speaker_0", "Patient seen for wound care follow-up.", 0, 12_000)]
+
+    rendered = render_transcript(turns, recording_speaker=None, diarized=False)
+    # SPEAKER and TRANSCRIPT are the rendered content's own section headers, not
+    # flag codes -- the regex has no way to tell those apart from a real one.
+    tokens = set(_FLAG_TOKEN.findall(rendered)) - _NOT_A_FLAG - {"SPEAKER", "TRANSCRIPT"}
+
+    for expected in _EXPECTED_FLAGS_BY_VERSION.values():
+        assert tokens <= expected, tokens - expected
+    assert "UNATTRIBUTED_STATEMENT" not in tokens

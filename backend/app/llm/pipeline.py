@@ -257,7 +257,9 @@ class Pipeline:
         schema = json_schema_for(spec)
         recording_speaker = infer_recording_speaker(transcription.turns)
         user_content = render_transcript(
-            transcription.turns, recording_speaker=recording_speaker
+            transcription.turns,
+            recording_speaker=recording_speaker,
+            diarized=spec.requires_diarization,
         )
 
         with self.tracer.span(
