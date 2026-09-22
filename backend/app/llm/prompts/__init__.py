@@ -12,7 +12,14 @@ precisely the accident this design exists to prevent.
 
 from dataclasses import dataclass
 
-from app.llm.prompts import ph_fdar_v1, ph_soapie_v1, shift_note_v1, soapie_v1
+from app.llm.prompts import (
+    ph_fdar_v1,
+    ph_soapie_v1,
+    shift_note_v1,
+    shift_note_v2,
+    soapie_v1,
+    soapie_v2,
+)
 from app.llm.prompts.shared import (
     SHARED_RULES,
     infer_recording_speaker,
@@ -36,7 +43,14 @@ class Prompt:
 
 _REGISTRY: dict[str, Prompt] = {
     module.VERSION: Prompt(version=module.VERSION, system_prompt=module.SYSTEM_PROMPT)
-    for module in (shift_note_v1, soapie_v1, ph_soapie_v1, ph_fdar_v1)
+    for module in (
+        shift_note_v1,
+        shift_note_v2,
+        soapie_v1,
+        soapie_v2,
+        ph_soapie_v1,
+        ph_fdar_v1,
+    )
 }
 
 
