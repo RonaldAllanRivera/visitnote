@@ -375,6 +375,13 @@ depend on. It belongs in a version that can afford that, and the README says so.
 
 ### `PATIENT_IDENTIFIER_DETECTED` — new, and it applies to every format
 
+> **Implementation status (Phase 4b):** declared and instructed on the two PH
+> templates only. `shift_note_v1` and `soapie_v1` are immutable prompt modules that
+> carry no redaction instruction, and declaring the code on their template rows would
+> put it in the generation schema with nothing ever requesting it — which yields a
+> clean note instead of a missing-control finding, and is worse than not declaring it.
+> US coverage requires `shift_note_v2` / `soapie_v2`, deferred to Phase 5.
+
 Critical severity. Raised when the transcript contains what appears to be a patient's
 real name, and the name is stripped from the generated note rather than carried into
 it.

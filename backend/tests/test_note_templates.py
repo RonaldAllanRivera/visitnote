@@ -262,13 +262,45 @@ async def test_ph_soapie_drops_the_three_cms_only_flags(session: AsyncSession) -
     assert cms_only.isdisjoint(ph_codes)
 
 
-async def test_every_template_flags_a_spoken_patient_identifier(
+async def test_ph_templates_flag_a_spoken_patient_identifier(
     session: AsyncSession,
 ) -> None:
-    """A pseudonymous label never de-identified the audio; this is what enforces it."""
-    for template in await NoteTemplateRepository(session).all_active():
+    """A pseudonymous label never de-identified the audio; this is what enforces it.
+
+    Scoped to PH because a declared flag is only half of the control: the prompt has
+    to ask for it. `ph_soapie_v1` and `ph_fdar_v1` both carry the redaction
+    instruction; `shift_note_v1` and `soapie_v1` do not, and they are immutable
+    modules. Declaring the code on the US rows would put it in the generation schema
+    with nothing ever requesting it, which yields a clean note instead of a
+    missing-control finding. US coverage arrives with the v2 prompt modules.
+    """
+    repository = NoteTemplateRepository(session)
+    for note_format in (NoteFormat.SOAPIE, NoteFormat.FDAR):
+        template = await repository.get_active(Jurisdiction.PH, note_format)
+        assert template is not None, note_format
         codes = {f["code"] for f in template.flag_schema["flags"]}
         assert "PATIENT_IDENTIFIER_DETECTED" in codes, template.prompt_version
+
+
+async def test_us_templates_do_not_yet_declare_the_identifier_flag(
+    session: AsyncSession,
+) -> None:
+    """The deferral, asserted rather than assumed.
+
+    This test should fail -- loudly, and with a pointer to the reason -- the moment
+    someone declares the code on a US row without also shipping a prompt that asks
+    for it. Delete it when `shift_note_v2` / `soapie_v2` land.
+    """
+    repository = NoteTemplateRepository(session)
+    for note_format in (NoteFormat.SHIFT_NOTE, NoteFormat.SOAPIE):
+        template = await repository.get_active(Jurisdiction.US, note_format)
+        assert template is not None, note_format
+        codes = {f["code"] for f in template.flag_schema["flags"]}
+        assert "PATIENT_IDENTIFIER_DETECTED" not in codes, (
+            f"{template.prompt_version} declares PATIENT_IDENTIFIER_DETECTED but the US "
+            "prompt modules carry no redaction instruction -- ship shift_note_v2 / "
+            "soapie_v2 first, then delete this test."
+        )
 
 
 async def test_ph_fdar_has_a_repeating_focus_section(session: AsyncSession) -> None:

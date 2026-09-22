@@ -34,12 +34,17 @@ behind each design decision.
     `SHARED_RULES`' unattributed-statement instruction: PH capture is
     `spoken_recap` only, so the transcript is always single-speaker and the
     condition that flag guards against cannot occur.
-  - `PATIENT_IDENTIFIER_DETECTED` (critical), on every template in every
-    jurisdiction: a nurse speaking a patient's real name aloud is caught and
-    stripped before it reaches a stored note, whatever the pseudonymous label
-    scheme in use.
+  - `PATIENT_IDENTIFIER_DETECTED` (critical), **on the two PH templates**: a nurse
+    speaking a patient's real name aloud is caught and stripped before it reaches a
+    stored note, whatever the pseudonymous label scheme in use. Declared *and*
+    instructed — `ph_soapie_v1` and `ph_fdar_v1` both carry the redaction rule,
+    because a flag the prompt never asks for produces a clean note rather than a
+    finding. **Not yet on the US templates**: `shift_note_v1` and `soapie_v1` are
+    immutable modules with no redaction instruction, so US coverage waits on
+    `shift_note_v2` / `soapie_v2`. The control is real where it is claimed and absent
+    where it is not.
   - Seed migration `0011` adds the `(PH, soapie, 1)` and `(PH, fdar, 1)` template
-    rows and backfills `PATIENT_IDENTIFIER_DETECTED` onto the two existing US rows.
+    rows. It deliberately leaves the two US rows alone; see the note above.
   - `default_format_for(jurisdiction, role)` replaces the old role-only lookup —
     role alone cannot pick a format once jurisdiction is also an axis (a Manila
     ward RN charts FDAR, a US home-health RN charts SOAPIE) — and

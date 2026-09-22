@@ -14,11 +14,14 @@ Two differences from 0002 beyond the new rows themselves:
 - The INSERT carries `jurisdiction` and `requires_diarization`, and no longer casts
   `format` to the `note_format` ENUM -- migration 0008 dropped that type, and the
   column is `VARCHAR(32)` now.
-- This migration also backfills `PATIENT_IDENTIFIER_DETECTED` onto the two existing
-  US rows. The flag is new with this phase and applies to every format, PH and US
-  alike (a nurse speaking a patient's name aloud is a risk regardless of
-  jurisdiction), so seeding it only on the two new rows would leave the US templates
-  permanently behind the spec they are supposed to satisfy.
+- `PATIENT_IDENTIFIER_DETECTED` is declared on the two PH rows only, not on the
+  existing US ones. The flag's intent is universal -- a nurse speaking a patient's
+  name aloud is a risk in any jurisdiction -- but `shift_note_v1` and `soapie_v1` are
+  immutable modules carrying no name-redaction instruction, so declaring it there
+  would put a code in the generation schema that nothing ever asks the model to raise.
+  A flag that is declared but never requested produces a clean note rather than a
+  missing-control finding, which is worse than not declaring it at all. US enforcement
+  arrives with `shift_note_v2` / `soapie_v2`, which carry the instruction.
 """
 
 import json
@@ -155,7 +158,8 @@ PH_SOAPIE_SECTIONS = _sections(
 # UNATTRIBUTED_STATEMENT, which has no path to firing against a single-speaker
 # dictated recap (ph_soapie_v1.py carries the explicit prompt override; see its
 # docstring). Everything else from US SOAPIE is retained verbatim, plus
-# PATIENT_IDENTIFIER_DETECTED, new with this phase and universal to every format.
+# PATIENT_IDENTIFIER_DETECTED, new with this phase and declared on the PH rows only --
+# see the module docstring for why the US rows do not get it yet.
 PH_SOAPIE_FLAGS = _flags(
     ("MISSING_VITALS", "critical", "No vital signs documented for a skilled nursing visit."),
     ("MISSING_VISIT_TIMES", "critical", "Arrival or departure time was not stated."),
@@ -333,56 +337,47 @@ def upgrade() -> None:
             },
         )
 
-    # PATIENT_IDENTIFIER_DETECTED is universal, not PH-specific: a US home visit
-    # names the client just as readily as a PH ward recap names the patient. Without
-    # this, the two rows seeded in 0002 would permanently lag the spec every
-    # template -- theirs included -- is now supposed to satisfy.
-    connection.execute(
-        sa.text(
-            """
-            UPDATE note_templates
-            SET flag_schema = jsonb_set(
-                flag_schema,
-                '{flags}',
-                (flag_schema -> 'flags') || CAST(:new_flag AS jsonb)
-            )
-            WHERE jurisdiction = 'US' AND format IN ('shift_note', 'soapie') AND version = 1
-            """
-        ),
-        {
-            "new_flag": json.dumps(
-                {
-                    "code": "PATIENT_IDENTIFIER_DETECTED",
-                    "severity": "critical",
-                    "description": _PATIENT_IDENTIFIER_DESCRIPTION,
-                }
-            )
-        },
-    )
-
 
 def downgrade() -> None:
+    """Remove the PH rows, and deal with the `fdar` value this migration made usable.
+
+    Below 0008 the two-value `note_format` ENUM is restored, so `fdar` stops being
+    representable at all. Anything still holding it has to be resolved here -- at the
+    migration that owns the concept -- rather than three migrations later as an opaque
+    `invalid input value for enum note_format: "fdar"` cast failure with no indication
+    of which rows caused it.
+    """
     connection = op.get_bind()
 
-    # Reverse the US backfill by filtering the flag out of the stored array, rather
-    # than assuming its position -- the array's order is not part of the contract.
+    # A stranded default is safe to clear: the column is nullable, and "no default
+    # chosen" is the state every account already occupies before onboarding.
     connection.execute(
+        sa.text("UPDATE users SET default_note_format = NULL WHERE default_note_format = 'fdar'")
+    )
+
+    # A captured visit or a generated note is not safe to clear. Both columns are NOT
+    # NULL, and an FDAR note has no honest pre-0011 representation: remapping it to
+    # SOAPIE would misstate what was charted, and deleting it would destroy a record
+    # this product treats as legally significant (see `Visit.audio_key` and the
+    # sign-off lock). So refuse, name the counts, and leave the decision to whoever is
+    # rolling back.
+    visits_stranded, notes_stranded = connection.execute(
         sa.text(
             """
-            UPDATE note_templates
-            SET flag_schema = jsonb_set(
-                flag_schema,
-                '{flags}',
-                (
-                    SELECT COALESCE(jsonb_agg(flag), '[]'::jsonb)
-                    FROM jsonb_array_elements(flag_schema -> 'flags') AS flag
-                    WHERE flag ->> 'code' != 'PATIENT_IDENTIFIER_DETECTED'
-                )
-            )
-            WHERE jurisdiction = 'US' AND format IN ('shift_note', 'soapie') AND version = 1
+            SELECT (SELECT count(*) FROM visits WHERE note_format = 'fdar'),
+                   (SELECT count(*) FROM notes WHERE format = 'fdar')
             """
         )
-    )
+    ).one()
+    if visits_stranded or notes_stranded:
+        raise RuntimeError(
+            f"cannot downgrade past 0011: {visits_stranded} visit(s) and "
+            f"{notes_stranded} note(s) are recorded as 'fdar', which has no "
+            "representation below migration 0008. Export or re-key that data "
+            "deliberately first; this migration will not remap it to another format "
+            "or delete it on your behalf."
+        )
+
     connection.execute(
         sa.text("DELETE FROM note_templates WHERE jurisdiction = 'PH' AND version = 1")
     )
