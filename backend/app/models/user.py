@@ -1,6 +1,6 @@
 """User accounts."""
 
-from sqlalchemy import Boolean, Enum, String, false, true
+from sqlalchemy import Boolean, Enum, String, UniqueConstraint, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, Timestamped, UUIDPrimaryKey
@@ -10,6 +10,16 @@ from app.models.enums import note_format_column as _format_column
 
 class User(UUIDPrimaryKey, Timestamped, Base):
     __tablename__ = "users"
+    __table_args__ = (
+        # Spelled out in full rather than left to `unique=True` below: a column with
+        # both `unique=True` and `index=True` compiles to a single unique Index, not
+        # a UniqueConstraint, so this project's `uq` naming convention (app/models/
+        # base.py) never runs and the table-level constraint migration 0003 created
+        # is left undeclared. `alembic revision --autogenerate` would then propose
+        # dropping `uq_users_email` -- the constraint actually enforcing a unique
+        # login identifier, `index=True` on the column only gets you a unique index.
+        UniqueConstraint("email", name="uq_users_email"),
+    )
 
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
 
