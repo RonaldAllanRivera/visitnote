@@ -21,7 +21,15 @@ class Visit(UUIDPrimaryKey, Timestamped, Base):
         # Keys are generated client-side, so uniqueness is scoped per user. A global
         # constraint would let one user's key collide with another's and hand back a
         # visit belonging to someone else.
-        UniqueConstraint("user_id", "idempotency_key", name="user_id_idempotency_key"),
+        #
+        # Spelled out in full rather than left short: this project's `uq` naming
+        # convention (app/models/base.py) interpolates the constraint's columns, not
+        # `%(constraint_name)s`, so an explicit name here is used verbatim and never
+        # gets the `uq_visits_` prefix applied. A short name would silently disagree
+        # with what migration 0005 actually created in the database, and
+        # `alembic revision --autogenerate` would propose dropping and recreating the
+        # constraint that stops a dropped-connection retry from double-spending quota.
+        UniqueConstraint("user_id", "idempotency_key", name="uq_visits_user_id_idempotency_key"),
         Index("ix_visits_user_id_status", "user_id", "status"),
     )
 

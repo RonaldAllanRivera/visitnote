@@ -90,6 +90,15 @@ jobs:
           alembic downgrade base
           alembic upgrade head
 
+      - name: Verify models match migrations
+        # Catches model-versus-migration drift: a model constraint name (or type,
+        # default, etc.) that disagrees with what the migrations actually created.
+        # That drift is silent until someone runs `alembic revision --autogenerate`
+        # against it and gets a spurious drop-and-recreate of a live constraint --
+        # which is exactly how the visits idempotency constraint went undetected for
+        # a full phase before this check existed.
+        run: alembic check
+
       - name: Test
         run: pytest -q
 
