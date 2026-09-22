@@ -11,7 +11,7 @@ voice, conditions, medications and often their household; the label only limits 
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Index, String
+from sqlalchemy import Boolean, ForeignKey, Index, String, true
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,7 +34,9 @@ class Client(UUIDPrimaryKey, Timestamped, Base):
 
     # Deactivated rather than deleted: visits reference this row, and a signed note is
     # a legal record that must stay readable after the assignment ends.
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
 
     def __repr__(self) -> str:
         return f"<Client {self.label!r} owner={self.owner_id}>"

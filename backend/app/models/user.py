@@ -1,6 +1,6 @@
 """User accounts."""
 
-from sqlalchemy import Boolean, Enum, String
+from sqlalchemy import Boolean, Enum, String, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, Timestamped, UUIDPrimaryKey
@@ -29,7 +29,15 @@ class User(UUIDPrimaryKey, Timestamped, Base):
     default_note_format: Mapped[NoteFormat | None] = mapped_column(_format_column(), nullable=True)
 
     # IANA zone. Every visit this user captures inherits it, and notes render in it.
-    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    #
+    # `server_default` is set alongside `default` on this and the three boolean
+    # columns below because migration 0003 gave each a server-side default.
+    # `default` is what lets the ORM insert a row without a round trip; without a
+    # matching `server_default`, Alembic sees a default in the database that the
+    # model does not declare and proposes dropping it on every autogenerate run.
+    timezone: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="UTC", server_default="UTC"
+    )
 
     # Selects the note templates available, the capture modes permitted, the privacy
     # regime named in the UI, and the currency shown. Defaulted from the timezone at
@@ -41,11 +49,17 @@ class User(UUIDPrimaryKey, Timestamped, Base):
         server_default="US",
     )
 
-    is_staff: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_staff: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     # Demo accounts are rejected on every write path, server side. Hiding the buttons
     # is not a control.
-    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
 
     def __repr__(self) -> str:
         return f"<User {self.email}>"

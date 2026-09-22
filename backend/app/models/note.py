@@ -3,7 +3,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import Boolean, Enum, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Enum, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -84,15 +84,22 @@ class Note(UUIDPrimaryKey, Timestamped, Base):
     # Optimistic concurrency. A supervisor opening a note in the review queue while
     # the author edits it on their phone must not silently discard one of them --
     # this is a legal record that will be signed.
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    edited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    edited: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
     signed_at: Mapped[UtcDateTime | None] = mapped_column(nullable=True)
     signed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     review_status: Mapped[ReviewStatus] = mapped_column(
-        _enum(ReviewStatus, "review_status"), nullable=False, default=ReviewStatus.UNREVIEWED
+        _enum(ReviewStatus, "review_status"),
+        nullable=False,
+        default=ReviewStatus.UNREVIEWED,
+        server_default="unreviewed",
     )
 
     # Provenance. A note that cannot say what produced it cannot be audited when a

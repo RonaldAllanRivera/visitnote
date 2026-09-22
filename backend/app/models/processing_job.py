@@ -13,7 +13,7 @@ recorded.
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import Enum, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import Enum, ForeignKey, Index, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,12 +43,20 @@ class ProcessingJob(UUIDPrimaryKey, Timestamped, Base):
     # in the table: "failed at transcription" and "failed at generation" are
     # different incidents with different fixes.
     stage: Mapped[JobStage] = mapped_column(
-        _enum(JobStage, "job_stage"), nullable=False, default=JobStage.QUEUED
+        _enum(JobStage, "job_stage"),
+        nullable=False,
+        default=JobStage.QUEUED,
+        server_default="queued",
     )
     status: Mapped[JobStatus] = mapped_column(
-        _enum(JobStatus, "job_status"), nullable=False, default=JobStatus.QUEUED
+        _enum(JobStatus, "job_status"),
+        nullable=False,
+        default=JobStatus.QUEUED,
+        server_default="queued",
     )
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Numeric, not float. These are money and billable minutes; binary floating point
