@@ -91,3 +91,8 @@ Thumbs.db
 
 # TypeScript incremental build cache (machine-local output, not source).
 *.tsbuildinfo
+
+# Written at the repo root by the contract CI job (and by anyone following the same
+# recipe locally) when exporting the OpenAPI document. Never committed -- the
+# generated types are the artefact worth reviewing, not their input.
+/openapi.json

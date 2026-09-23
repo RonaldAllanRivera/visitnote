@@ -5,22 +5,12 @@ from dataclasses import dataclass
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.jurisdiction import capture_restriction_for
 from app.models import ConsentLog, User, Visit
-from app.models.enums import CaptureMode, Jurisdiction
 from app.repositories.clients import ClientRepository
 from app.repositories.note_templates import NoteTemplateRepository
 from app.repositories.visits import VisitRepository
 from app.schemas.visit import VisitCreate
-
-# Jurisdictions in which recording a third party is not lawfully obtainable, and the
-# statute that says so. Data rather than a branch, so adding a jurisdiction is a row.
-PROHIBITED_CAPTURE_MODES: dict[Jurisdiction, tuple[CaptureMode, str]] = {
-    Jurisdiction.PH: (
-        CaptureMode.LIVE_AUDIO,
-        "RA 4200 (Anti-Wiretapping Act) requires the consent of all parties to a "
-        "private communication. Record a spoken recap instead.",
-    ),
-}
 
 
 class UnknownClientError(Exception):
@@ -91,9 +81,9 @@ class VisitService:
                 f"format {note_format}. Choose a format this jurisdiction supports."
             )
 
-        prohibited = PROHIBITED_CAPTURE_MODES.get(user.jurisdiction)
-        if prohibited is not None and payload.capture_mode is prohibited[0]:
-            raise ProhibitedCaptureModeError(prohibited[1])
+        restriction = capture_restriction_for(user.jurisdiction)
+        if restriction is not None and payload.capture_mode is restriction.mode:
+            raise ProhibitedCaptureModeError(restriction.message)
 
         care_recipient = await ClientRepository(self.session).get_for_owner(
             payload.client_id, user.id

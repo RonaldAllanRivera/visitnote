@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo, available_timezones
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.models.enums import Jurisdiction, NoteFormat, RoleTitle
+from app.models.enums import CaptureMode, Jurisdiction, NoteFormat, RoleTitle
 
 # Length beats composition rules. NIST withdrew the character-class requirements
 # because they push people toward predictable substitutions; length is what actually
@@ -48,6 +48,32 @@ class TokenPair(BaseModel):
     expires_in: int
 
 
+class CaptureRestrictionRead(BaseModel):
+    """A capture mode this account may not use, and the statute that says so."""
+
+    code: str
+    mode: CaptureMode
+    message: str
+
+
+class Capabilities(BaseModel):
+    """What this account may do, decided from its jurisdiction.
+
+    Published so the client can stop offering what the server will refuse. It is not
+    the enforcement: every rule here is checked again, against the user's current row,
+    on the request that depends on it. That matters because these limits change
+    without a new session -- a jurisdiction switch takes effect on the next request,
+    and a capability minted into a bearer token would outlive the switch that revoked
+    it.
+    """
+
+    allowed_capture_modes: list[CaptureMode]
+    capture_restriction: CaptureRestrictionRead | None
+    # What this jurisdiction actually seeds templates for, read from note_templates
+    # rather than listed here, so a new template row is a new option with no release.
+    available_formats: list[NoteFormat]
+
+
 class UserProfile(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,6 +85,7 @@ class UserProfile(BaseModel):
     timezone: str
     jurisdiction: Jurisdiction
     is_staff: bool
+    capabilities: Capabilities
 
 
 # Role alone cannot pick a format once there are two jurisdictions: an RN on a Manila

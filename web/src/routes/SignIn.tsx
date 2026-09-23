@@ -1,8 +1,9 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 
 import { api } from '@/api/client'
+import { profileQuery } from '@/lib/profile'
 import { useAuthStore } from '@/stores/auth'
 
 type Mode = 'sign-in' | 'register'
@@ -14,6 +15,7 @@ export function SignIn() {
 
   const navigate = useNavigate()
   const location = useLocation()
+  const queryClient = useQueryClient()
   const setSession = useAuthStore((state) => state.setSession)
 
   const destination = (location.state as { from?: string } | null)?.from ?? '/status'
@@ -45,6 +47,16 @@ export function SignIn() {
     },
     onSuccess: (data) => {
       setSession({ accessToken: data.access_token, refreshToken: data.refresh_token })
+      // Started before navigating, not awaited. The account's limits -- which
+      // capture modes are lawful here, which formats exist -- decide what the next
+      // screen may offer, and fetching them only once that screen mounts means it
+      // renders once with nothing available and again a moment later. The session is
+      // already set, so this request carries the new token.
+      void queryClient.query(profileQuery).catch(() => {
+        // A failed prefetch is not a failed sign-in. Every screen that needs the
+        // profile fetches it itself and surfaces its own error; this only decides
+        // whether that fetch has already happened by the time one mounts.
+      })
       void navigate(destination, { replace: true })
     },
   })

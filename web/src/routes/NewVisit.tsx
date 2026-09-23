@@ -3,23 +3,28 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 
 import { api } from '@/api/client'
+import type { components } from '@/api/schema'
+import { detailMessage } from '@/lib/apiError'
+import { useProfile } from '@/lib/profile'
 import { formatElapsed } from '@/lib/recorderState'
 import { uploadAudio } from '@/lib/uploadAudio'
 import { useRecorder } from '@/lib/useRecorder'
 
-type CaptureMode = 'live_audio' | 'spoken_recap'
+type CaptureMode = components['schemas']['CaptureMode']
 
 /**
- * Visit creation's 422s (an unsupported note format, the RA 4200 capture-mode
- * refusal) carry a plain-string `detail`, but the generated type says `detail` is a
- * list of validation errors -- FastAPI's OpenAPI export always shapes 422 that way,
- * regardless of what a route's own HTTPException actually sends. Read it as unknown
- * rather than trust the generated shape, so the reason reaches the user instead of
- * being thrown away.
+ * How each capture mode is described. Copy only -- which of these the account may
+ * actually use is the server's answer, read from its published capabilities.
  */
-function detailMessage(error: unknown, fallback: string): string {
-  const detail = (error as { detail?: unknown } | null | undefined)?.detail
-  return typeof detail === 'string' ? detail : fallback
+const MODE_COPY: Record<CaptureMode, { label: string; hint: string }> = {
+  spoken_recap: {
+    label: 'I will describe the visit afterwards',
+    hint: 'Records only you.',
+  },
+  live_audio: {
+    label: 'Record the visit itself',
+    hint: 'Records the client. Consent required.',
+  },
 }
 
 /**
@@ -37,6 +42,7 @@ export function NewVisit() {
 
   const [clientId, setClientId] = useState('')
   const [mode, setMode] = useState<CaptureMode>('spoken_recap')
+  const { data: profile } = useProfile()
   const [consented, setConsented] = useState(false)
   const [progress, setProgress] = useState(0)
 
@@ -52,6 +58,11 @@ export function NewVisit() {
     },
   })
 
+  // Empty until the profile lands, so a mode the server would refuse is never
+  // offered optimistically: one that is picked, recorded against, and only then
+  // refused costs the nurse a shift's dictation.
+  const allowedModes = profile?.capabilities.allowed_capture_modes ?? []
+  const restriction = profile?.capabilities.capture_restriction ?? null
   const needsConsent = mode === 'live_audio'
   const canRecord = clientId !== '' && (!needsConsent || consented)
 
@@ -150,12 +161,9 @@ export function NewVisit() {
 
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">How are you capturing this?</legend>
-        {(
-          [
-            ['spoken_recap', 'I will describe the visit afterwards', 'Records only you.'],
-            ['live_audio', 'Record the visit itself', 'Records the client. Consent required.'],
-          ] as const
-        ).map(([value, label, hint]) => (
+        {allowedModes.map((value) => {
+          const { label, hint } = MODE_COPY[value]
+          return (
           <label key={value} className="flex gap-3 rounded-md border border-line p-3">
             <input
               type="radio"
@@ -173,8 +181,15 @@ export function NewVisit() {
               <span className="block text-xs text-muted">{hint}</span>
             </span>
           </label>
-        ))}
+          )
+        })}
       </fieldset>
+
+      {restriction !== null && (
+        // The server's own wording, not a paraphrase of it. One statement of a
+        // criminal-law constraint, from the code that enforces it.
+        <p className="text-xs text-muted">{restriction.message}</p>
+      )}
 
       {needsConsent && (
         <div className="space-y-2 rounded-md border border-critical/40 p-4">

@@ -10,13 +10,24 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.jurisdiction import jurisdiction_for_timezone
+from app.core.jurisdiction import (
+    allowed_capture_modes,
+    capture_restriction_for,
+    jurisdiction_for_timezone,
+)
 from app.core.security import create_access_token, hash_password, needs_rehash, verify_password
 from app.models import User
 from app.models.enums import RoleTitle
 from app.repositories.note_templates import NoteTemplateRepository
 from app.repositories.users import UserRepository
-from app.schemas.auth import OnboardingRequest, TokenPair, default_format_for
+from app.schemas.auth import (
+    Capabilities,
+    CaptureRestrictionRead,
+    OnboardingRequest,
+    TokenPair,
+    UserProfile,
+    default_format_for,
+)
 from app.services.google import GoogleIdentity
 from app.services.refresh_tokens import RefreshTokenService
 
@@ -108,6 +119,41 @@ class AuthService:
             access_token=create_access_token(user_id),
             refresh_token=raw_refresh,
             expires_in=settings.access_token_ttl_seconds,
+        )
+
+    async def profile_for(self, user: User) -> UserProfile:
+        """The account as the client sees it, limits included.
+
+        Fields are listed by name rather than validated straight off the ORM object,
+        for the mirror of the reason `update_profile` assigns by name: a column added
+        to `User` cannot accidentally become part of the API response. An account's
+        password hash and its OAuth subject live on the same row as its timezone.
+        """
+        restriction = capture_restriction_for(user.jurisdiction)
+        formats = await NoteTemplateRepository(self.session).active_formats(user.jurisdiction)
+
+        return UserProfile(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            role_title=user.role_title,
+            default_note_format=user.default_note_format,
+            timezone=user.timezone,
+            jurisdiction=user.jurisdiction,
+            is_staff=user.is_staff,
+            capabilities=Capabilities(
+                allowed_capture_modes=allowed_capture_modes(user.jurisdiction),
+                capture_restriction=(
+                    None
+                    if restriction is None
+                    else CaptureRestrictionRead(
+                        code=restriction.code,
+                        mode=restriction.mode,
+                        message=restriction.message,
+                    )
+                ),
+                available_formats=formats,
+            ),
         )
 
     async def update_profile(self, user: User, payload: OnboardingRequest) -> User:

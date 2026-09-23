@@ -102,6 +102,70 @@ jobs:
       - name: Test
         run: pytest -q
 
+  contract:
+    name: contract (openapi -> generated types)
+    runs-on: ubuntu-latest
+
+    # The same class of check as `alembic check` in the backend job, one layer up.
+    # The client's types are generated from the API's OpenAPI document, and the whole
+    # safety claim -- that a backend contract change surfaces as a TypeScript compile
+    # error rather than a runtime surprise -- holds only while the committed types
+    # actually match the API. A *new* field breaks no existing call site, so drift is
+    # silent: `jurisdiction` was added to UserProfile and OnboardingRequest in phase
+    # 4b and `fdar` to NoteFormat, and none of it reached the client for a full phase
+    # because nothing here was checking.
+    #
+    # No server and no database: the document is built from the app object directly,
+    # which is the same document the API serves.
+    env:
+      ENVIRONMENT: ci
+      DATABASE_URL: postgresql://visitnote:visitnote@localhost:5432/visitnote
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-only-secret-value-at-least-32-characters-long
+      CORS_ORIGINS: http://localhost:5173
+      TRUSTED_HOSTS: localhost,127.0.0.1
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install backend
+        working-directory: backend
+        run: pip install -e ".[dev]"
+
+      - name: Install web
+        # `npm ci` rather than npx-on-demand, so the generator is the version the
+        # repository pins. A different generator version would produce a spurious
+        # diff and report drift that does not exist.
+        working-directory: web
+        run: npm ci
+
+      - name: Export the API's OpenAPI document
+        working-directory: backend
+        run: python -c "import json; from app.main import app; print(json.dumps(app.openapi()))" > ../openapi.json
+
+      - name: Regenerate the client types
+        working-directory: web
+        run: npx openapi-typescript ../openapi.json -o src/api/schema.d.ts
+
+      - name: Verify the committed types match the API
+        run: |
+          if ! git diff --exit-code -- web/src/api/schema.d.ts; then
+            echo "::error::web/src/api/schema.d.ts is stale. Run 'npm run generate:api' in web/ against a running API, and commit the result."
+            exit 1
+          fi
+
   web:
     name: web (tsc, vitest)
     runs-on: ubuntu-latest

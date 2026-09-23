@@ -359,6 +359,24 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * Capabilities
+         * @description What this account may do, decided from its jurisdiction.
+         *
+         *     Published so the client can stop offering what the server will refuse. It is not
+         *     the enforcement: every rule here is checked again, against the user's current row,
+         *     on the request that depends on it. That matters because these limits change
+         *     without a new session -- a jurisdiction switch takes effect on the next request,
+         *     and a capability minted into a bearer token would outlive the switch that revoked
+         *     it.
+         */
+        Capabilities: {
+            /** Allowed Capture Modes */
+            allowed_capture_modes: components["schemas"]["CaptureMode"][];
+            capture_restriction: components["schemas"]["CaptureRestrictionRead"] | null;
+            /** Available Formats */
+            available_formats: components["schemas"]["NoteFormat"][];
+        };
+        /**
          * CaptureMode
          * @description How the audio was obtained.
          *
@@ -368,6 +386,17 @@ export interface components {
          * @enum {string}
          */
         CaptureMode: "live_audio" | "spoken_recap";
+        /**
+         * CaptureRestrictionRead
+         * @description A capture mode this account may not use, and the statute that says so.
+         */
+        CaptureRestrictionRead: {
+            /** Code */
+            code: string;
+            mode: components["schemas"]["CaptureMode"];
+            /** Message */
+            message: string;
+        };
         /** ClientCreate */
         ClientCreate: {
             /** Label */
@@ -459,6 +488,15 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * Jurisdiction
+         * @description Which regulatory regime a user, visit, and note template belong to.
+         *
+         *     Stored as CHAR(2) with a check constraint rather than a Postgres ENUM, because
+         *     the set grows and ALTER TYPE cannot run inside a transaction block.
+         * @enum {string}
+         */
+        Jurisdiction: "US" | "PH";
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -473,7 +511,7 @@ export interface components {
          * NoteFormat
          * @enum {string}
          */
-        NoteFormat: "shift_note" | "soapie";
+        NoteFormat: "shift_note" | "soapie" | "fdar";
         /**
          * OnboardingRequest
          * @description Partial profile update.
@@ -489,6 +527,7 @@ export interface components {
             default_note_format?: components["schemas"]["NoteFormat"] | null;
             /** Timezone */
             timezone?: string | null;
+            jurisdiction?: components["schemas"]["Jurisdiction"] | null;
         };
         /** OpsJob */
         OpsJob: {
@@ -625,8 +664,10 @@ export interface components {
             default_note_format: components["schemas"]["NoteFormat"] | null;
             /** Timezone */
             timezone: string;
+            jurisdiction: components["schemas"]["Jurisdiction"];
             /** Is Staff */
             is_staff: boolean;
+            capabilities: components["schemas"]["Capabilities"];
         };
         /** ValidationError */
         ValidationError: {
@@ -697,6 +738,7 @@ export interface components {
              * Format: uuid
              */
             client_id: string;
+            jurisdiction: components["schemas"]["Jurisdiction"];
             note_format: components["schemas"]["NoteFormat"];
             capture_mode: components["schemas"]["CaptureMode"];
             status: components["schemas"]["VisitStatus"];

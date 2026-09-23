@@ -131,16 +131,19 @@ async def logout(payload: RefreshRequest, session: SessionDep) -> Response:
 
 
 @router.get("/me", response_model=UserProfile)
-async def me(user: CurrentUser) -> UserProfile:
-    return UserProfile.model_validate(user)
+async def me(user: CurrentUser, session: SessionDep) -> UserProfile:
+    return await AuthService(session).profile_for(user)
 
 
 @router.patch("/me", response_model=UserProfile)
 async def update_me(
     payload: OnboardingRequest, user: CurrentUser, session: SessionDep
 ) -> UserProfile:
-    updated = await AuthService(session).update_profile(user, payload)
-    return UserProfile.model_validate(updated)
+    service = AuthService(session)
+    updated = await service.update_profile(user, payload)
+    # Re-read through the same assembly the GET uses, so a switch returns the limits
+    # it just brought into effect rather than the ones it replaced.
+    return await service.profile_for(updated)
 
 
 @router.post("/google", response_model=TokenPair)

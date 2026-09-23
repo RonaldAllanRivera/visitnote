@@ -50,3 +50,24 @@ class NoteTemplateRepository:
             .scalars()
             .all()
         )
+
+    async def active_formats(self, jurisdiction: Jurisdiction) -> list[NoteFormat]:
+        """Every format this jurisdiction has an active template for.
+
+        Distinct, because a format can carry more than one active version and the
+        caller is asking what it may chart -- not how many templates exist. Read from
+        the table rather than a hardcoded map, so seeding a template makes the format
+        available with no code change.
+        """
+        rows = (
+            await self.session.execute(
+                select(NoteTemplate.format)
+                .where(
+                    NoteTemplate.jurisdiction == jurisdiction,
+                    NoteTemplate.is_active.is_(True),
+                )
+                .distinct()
+                .order_by(NoteTemplate.format)
+            )
+        ).scalars()
+        return list(rows)
