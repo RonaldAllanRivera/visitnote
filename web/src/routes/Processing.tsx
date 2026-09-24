@@ -87,11 +87,23 @@ export function Processing() {
       )}
 
       {finished && !failed && (
-        <p className="text-sm">
-          <Link to="/new" className="underline">
-            Record another visit
-          </Link>
-        </p>
+        <div className="space-y-2 text-sm">
+          {typeof data.note_id === 'string' && (
+            <p>
+              {/* The note is why the nurse recorded anything. It goes first, and
+                  "record another" stops being the only thing a finished visit
+                  offers. */}
+              <Link to={`/notes/${data.note_id}`} className="underline">
+                Read and correct your note
+              </Link>
+            </p>
+          )}
+          <p>
+            <Link to="/new" className="underline">
+              Record another visit
+            </Link>
+          </p>
+        </div>
       )}
 
       {!finished && data.attempts > 1 && (
