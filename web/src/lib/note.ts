@@ -11,12 +11,21 @@ export type SectionSpec = components['schemas']['SectionSpecRead']
 export type NoteFlag = components['schemas']['NoteFlagRead']
 export type SectionValue = Note['sections'][string]
 
-/** Thrown when the note moved on while it was open. Carries where it moved to. */
+/** Thrown when the note moved on while it was open. Carries where it moved to, when
+ * the 409 body said -- null for a malformed body, which is data, not "version 0". */
 export class NoteConflictError extends Error {
-  constructor(readonly currentVersion: number) {
+  constructor(readonly currentVersion: number | null) {
     super('This note was changed somewhere else.')
     this.name = 'NoteConflictError'
   }
+}
+
+/** An all-whitespace edit means "nothing here," which the note's own schema
+ * represents as null rather than as an empty string. The next phase's deterministic
+ * missing-field checks are written as `is None`, so a stored "" would read as
+ * present when it is not. Applied at every point the editor writes a field value. */
+export function normalizeFieldValue(value: string): string | null {
+  return value.trim() === '' ? null : value
 }
 
 export function useNote(noteId: string) {
@@ -56,7 +65,7 @@ export function useSaveNote(noteId: string) {
       })
       if (response.status === 409) {
         const detail = (error as { detail?: { current_version?: number } } | undefined)?.detail
-        throw new NoteConflictError(detail?.current_version ?? 0)
+        throw new NoteConflictError(detail?.current_version ?? null)
       }
       if (error ?? !data) throw new Error(detailMessage(error, 'Could not save this note'))
       return data

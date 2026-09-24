@@ -38,6 +38,17 @@ describe('RepeatingSection', () => {
     expect(onChange).toHaveBeenCalledWith([...ENTRIES, { focus: '', response: '' }])
   })
 
+  it('stores an all-whitespace edit as null, not as an empty string', () => {
+    // The next phase's deterministic missing-field checks are written as `is None`;
+    // a stored "" would read as present when the nurse actually cleared the field.
+    const onChange = vi.fn()
+    render(<RepeatingSection section={SECTION} entries={ENTRIES} onChange={onChange} />)
+
+    fireEvent.change(screen.getByDisplayValue('Relieved to 3/10'), { target: { value: '   ' } })
+
+    expect(onChange).toHaveBeenCalledWith([{ focus: 'Pain', response: null }])
+  })
+
   it('removes the entry the nurse asked to remove', () => {
     const onChange = vi.fn()
     const two = [...ENTRIES, { focus: 'Fever', response: 'Down to 37.2' }]

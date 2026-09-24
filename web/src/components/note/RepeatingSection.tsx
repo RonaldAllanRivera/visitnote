@@ -1,4 +1,4 @@
-import type { SectionSpec } from '@/lib/note'
+import { normalizeFieldValue, type SectionSpec } from '@/lib/note'
 
 type Entry = Record<string, string | null>
 
@@ -26,7 +26,11 @@ export function RepeatingSection({
     Object.fromEntries(section.fields.map((field) => [field.key, '']))
 
   const updateEntry = (index: number, key: string, value: string) => {
-    onChange(entries.map((entry, i) => (i === index ? { ...entry, [key]: value } : entry)))
+    onChange(
+      entries.map((entry, i) =>
+        i === index ? { ...entry, [key]: normalizeFieldValue(value) } : entry,
+      ),
+    )
   }
 
   return (

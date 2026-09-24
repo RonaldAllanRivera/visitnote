@@ -547,6 +547,27 @@ export interface components {
             /** Password */
             password: string;
         };
+        /**
+         * NoteConflictDetail
+         * @description The body of a 409 from `PATCH /notes/{note_id}`: what actually happened.
+         */
+        NoteConflictDetail: {
+            /** Message */
+            message: string;
+            /** Current Version */
+            current_version: number;
+        };
+        /**
+         * NoteConflictResponse
+         * @description Declared on the route purely so the 409 reaches the generated client types.
+         *
+         *     Without this, openapi-typescript has nothing to type that branch from, and the
+         *     web client is left guessing at the shape of `error.detail` -- which is exactly
+         *     how a malformed-body fallback (`currentVersion: 0`) read as a real version.
+         */
+        NoteConflictResponse: {
+            detail: components["schemas"]["NoteConflictDetail"];
+        };
         /** NoteFlagRead */
         NoteFlagRead: {
             /** Code */
@@ -585,6 +606,14 @@ export interface components {
             flag_counts: {
                 [key: string]: number;
             };
+        };
+        /**
+         * NoteNotFoundResponse
+         * @description The body of a 404 from a note route: no such note, or it belongs to someone else.
+         */
+        NoteNotFoundResponse: {
+            /** Detail */
+            detail: string;
         };
         /** NoteRead */
         NoteRead: {
@@ -634,7 +663,7 @@ export interface components {
             version: number;
             /** Visit Details */
             visit_details?: {
-                [key: string]: unknown;
+                [key: string]: string | null;
             } | null;
             /** Sections */
             sections?: {
@@ -1595,6 +1624,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NoteRead"];
+                };
+            };
+            /** @description No such note, or it belongs to someone else. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteNotFoundResponse"];
+                };
+            };
+            /** @description Someone else has written to this note since it was loaded. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteConflictResponse"];
                 };
             };
             /** @description Validation Error */

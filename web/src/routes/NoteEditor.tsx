@@ -11,7 +11,7 @@ type Entry = Record<string, string | null>
 
 interface Draft {
   version: number
-  visitDetails: Record<string, unknown>
+  visitDetails: Record<string, string | null>
   sections: Record<string, SectionValue>
 }
 
@@ -20,7 +20,12 @@ function draftOf(note: Note): Draft {
     // Captured with the draft, not read at save time: this is the version the nurse
     // actually saw, which is the thing the server needs to compare against.
     version: note.version,
-    visitDetails: { ...note.visit_details },
+    // `NoteRead.visit_details` is typed `Record<string, unknown>` in the generated
+    // client -- the read schema still leaves it as `Any` -- but what the backend
+    // actually writes there, on both the generation and edit paths, is always
+    // `str | null` per key (`VISIT_DETAIL_KEYS`). This cast states that contract; it
+    // is what `NoteUpdate.visit_details` requires the draft to be shaped as anyway.
+    visitDetails: { ...note.visit_details } as Record<string, string | null>,
     sections: { ...note.sections },
   }
 }
@@ -110,8 +115,11 @@ export function NoteEditor() {
       {conflict !== null ? (
         <div className="space-y-2 rounded-md border border-critical/50 p-4">
           <p className="text-sm">
-            This note was changed somewhere else — it is now at version{' '}
-            {conflict.currentVersion}. Saving now would discard that change.
+            This note was changed somewhere else — it is now at{' '}
+            {conflict.currentVersion === null
+              ? 'another version'
+              : `version ${String(conflict.currentVersion)}`}
+            . Saving now would discard that change.
           </p>
           <p className="text-sm text-muted">
             Reloading discards the edits you have made since your last save.

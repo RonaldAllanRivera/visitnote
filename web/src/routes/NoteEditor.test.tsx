@@ -167,6 +167,39 @@ describe('NoteEditor', () => {
     expect(screen.getByLabelText(/shift details/i)).toHaveValue('Night shift.')
   })
 
+  it('says "another version" rather than inventing version 0 for a malformed 409', async () => {
+    vi.mocked(api.PATCH).mockResolvedValue({
+      error: { detail: { message: 'changed' } },
+      response: new Response(null, { status: 409 }),
+    } as never)
+
+    renderEditor()
+    fireEvent.click(await screen.findByRole('button', { name: /save/i }))
+
+    await screen.findByText(/another version/i)
+    expect(screen.queryByText(/version 0/i)).not.toBeInTheDocument()
+  })
+
+  it('normalises an all-whitespace edit to null before saving, for a section and a visit detail', async () => {
+    vi.mocked(api.PATCH).mockResolvedValue(okPatch(note({ version: 2, edited: true })))
+
+    renderEditor()
+    fireEvent.change(await screen.findByLabelText(/shift details/i), { target: { value: '   ' } })
+    fireEvent.change(screen.getByLabelText(/start time/i), { target: { value: '  ' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => { expect(api.PATCH).toHaveBeenCalled() })
+    const calls = vi.mocked(api.PATCH).mock.calls as unknown as [
+      string,
+      { body: { sections: Record<string, unknown>; visit_details: Record<string, unknown> } },
+    ][]
+    const call = calls[0]
+    if (call === undefined) throw new Error('expected api.PATCH to have been called')
+    expect(call[1].body.sections.shift_details).toBeNull()
+    expect(call[1].body.visit_details.start_time).toBeNull()
+  })
+
   it('offers a reload rather than choosing which version survives', async () => {
     vi.mocked(api.PATCH).mockResolvedValue(conflictPatch(4))
 

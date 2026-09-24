@@ -1,3 +1,5 @@
+import { normalizeFieldValue } from '@/lib/note'
+
 /**
  * The note's header: who, when, and the exact times.
  *
@@ -17,7 +19,7 @@ export function VisitDetailsFields({
   onChange,
 }: {
   details: Record<string, unknown>
-  onChange: (key: string, value: string) => void
+  onChange: (key: string, value: string | null) => void
 }) {
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -32,7 +34,7 @@ export function VisitDetailsFields({
             <input
               id={id}
               value={typeof value === 'string' ? value : ''}
-              onChange={(event) => { onChange(key, event.target.value) }}
+              onChange={(event) => { onChange(key, normalizeFieldValue(event.target.value)) }}
               className="w-full rounded-md border border-line bg-transparent px-3 py-2 text-sm"
             />
           </div>

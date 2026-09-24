@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api/client'
 import type { Note } from '@/lib/note'
 
-import { useNote, useSaveNote } from './note'
+import { normalizeFieldValue, NoteConflictError, useNote, useSaveNote } from './note'
 
 vi.mock('@/api/client', () => ({ api: { GET: vi.fn(), PATCH: vi.fn() } }))
 
@@ -74,5 +74,40 @@ describe('useSaveNote', () => {
     // The save landed and the mutation's onSuccess ran (which invalidates the list),
     // but the note's own query must not have gone back to the network for it.
     expect(api.GET).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a conflict with no current_version as null, not as version 0', async () => {
+    // A malformed 409 body used to degrade to `currentVersion: 0`, which the dialog
+    // then printed as if it were the note's real version.
+    vi.mocked(api.GET).mockResolvedValue(ok(noteFixture({ version: 1 })))
+    vi.mocked(api.PATCH).mockResolvedValue({
+      error: { detail: { message: 'changed' } },
+      response: new Response(null, { status: 409 }),
+    } as never)
+
+    const { result } = renderNoteAndSave()
+    await waitFor(() => { expect(result.current.note.data).toBeDefined() })
+
+    result.current.save.mutate({ version: 1, sections: { narrative: 'Edited.' } })
+
+    await waitFor(() => { expect(result.current.save.isError).toBe(true) })
+    const error = result.current.save.error
+    expect(error).toBeInstanceOf(NoteConflictError)
+    expect((error as NoteConflictError).currentVersion).toBeNull()
+  })
+})
+
+describe('normalizeFieldValue', () => {
+  it('turns an all-whitespace edit into null', () => {
+    expect(normalizeFieldValue('')).toBeNull()
+    expect(normalizeFieldValue('   ')).toBeNull()
+    expect(normalizeFieldValue('\n\t ')).toBeNull()
+  })
+
+  it('leaves real content untouched', () => {
+    expect(normalizeFieldValue('Ate half of lunch.')).toBe('Ate half of lunch.')
+    // Leading/trailing whitespace around real content is not itself the "nothing
+    // here" signal -- only a value that is whitespace through and through is.
+    expect(normalizeFieldValue('  Ate half of lunch.  ')).toBe('  Ate half of lunch.  ')
   })
 })
