@@ -56,3 +56,16 @@ class NoteRead(BaseModel):
     sections: dict[str, SectionValue]
     flags: list[NoteFlagRead]
     template: TemplateRead
+
+
+class NoteListItem(BaseModel):
+    id: uuid.UUID
+    visit_id: uuid.UUID
+    format: NoteFormat
+    client_label: str | None
+    visit_date: str | None
+    edited: bool
+    signed_at: datetime | None
+    # Keyed by severity. Absent severities are omitted rather than sent as zero, so
+    # the client renders what exists instead of three counters that are mostly noise.
+    flag_counts: dict[FlagSeverity, int]

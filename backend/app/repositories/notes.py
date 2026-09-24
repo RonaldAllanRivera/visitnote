@@ -9,13 +9,14 @@ which only one of them exists.
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.llm.contract import GeneratedNote
 from app.llm.templates import TemplateSpec
 from app.models import Note, NoteFlag, Transcript, Visit
+from app.models.enums import FlagSeverity
 from app.transcription import Transcription
 
 
@@ -87,6 +88,51 @@ class NoteRepository:
                 .options(selectinload(Note.template))
             )
         ).scalar_one_or_none()
+
+    async def recent_for_user(self, user_id: uuid.UUID, limit: int = 50) -> list[Note]:
+        """The user's most recent notes.
+
+        Bounded rather than paginated: this list exists so someone can get back to a
+        note they just wrote, and past fifty rows a list is the wrong tool. The
+        roster with its filters is phase 7.
+        """
+        return list(
+            (
+                await self.session.execute(
+                    select(Note)
+                    .where(Note.user_id == user_id)
+                    .order_by(Note.created_at.desc())
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def flag_counts(
+        self, note_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, dict[FlagSeverity, int]]:
+        """Flag counts per note, per severity, computed in SQL.
+
+        The API contract promises these aggregations are SQL rather than Python
+        loops, and that promise is not keepable against a JSONB array at volume --
+        which is the whole reason note_flags exists alongside notes.flags.
+        """
+        if not note_ids:
+            return {}
+
+        rows = (
+            await self.session.execute(
+                select(NoteFlag.note_id, NoteFlag.severity, func.count())
+                .where(NoteFlag.note_id.in_(note_ids))
+                .group_by(NoteFlag.note_id, NoteFlag.severity)
+            )
+        ).all()
+
+        counts: dict[uuid.UUID, dict[FlagSeverity, int]] = {}
+        for note_id, severity, count in rows:
+            counts.setdefault(note_id, {})[severity] = count
+        return counts
 
 
 @dataclass(slots=True)

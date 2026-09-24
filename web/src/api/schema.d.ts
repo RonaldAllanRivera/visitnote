@@ -306,6 +306,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Notes */
+        get: operations["list_notes_api_v1_notes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/notes/{note_id}": {
         parameters: {
             query?: never;
@@ -542,6 +559,32 @@ export interface components {
          * @enum {string}
          */
         NoteFormat: "shift_note" | "soapie" | "fdar";
+        /** NoteListItem */
+        NoteListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Visit Id
+             * Format: uuid
+             */
+            visit_id: string;
+            format: components["schemas"]["NoteFormat"];
+            /** Client Label */
+            client_label: string | null;
+            /** Visit Date */
+            visit_date: string | null;
+            /** Edited */
+            edited: boolean;
+            /** Signed At */
+            signed_at: string | null;
+            /** Flag Counts */
+            flag_counts: {
+                [key: string]: number;
+            };
+        };
         /** NoteRead */
         NoteRead: {
             /**
@@ -1451,6 +1494,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notes_api_v1_notes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteListItem"][];
                 };
             };
         };

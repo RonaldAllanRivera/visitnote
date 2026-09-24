@@ -99,3 +99,41 @@ async def test_another_users_note_is_not_found(
     response = await client.get(f"/api/v1/notes/{note.id}", headers=headers)
 
     assert response.status_code == 404
+
+
+async def test_the_list_returns_your_own_notes_newest_first(
+    client: AsyncClient, two_notes_fixture
+) -> None:
+    (older, newer), headers = two_notes_fixture
+
+    body = (await client.get("/api/v1/notes", headers=headers)).json()
+
+    assert [item["id"] for item in body] == [str(newer.id), str(older.id)]
+
+
+async def test_the_list_counts_flags_by_severity(
+    client: AsyncClient, note_fixture
+) -> None:
+    # Aggregated in SQL over note_flags rather than by counting the JSONB payload in
+    # Python: that normalized table exists for exactly this access pattern.
+    _note, headers = note_fixture
+
+    body = (await client.get("/api/v1/notes", headers=headers)).json()
+
+    assert body[0]["flag_counts"]["critical"] >= 1
+
+
+async def test_the_list_excludes_other_users_notes(
+    client: AsyncClient, note_fixture
+) -> None:
+    _, _ = note_fixture
+    other = (
+        await client.post(
+            "/api/v1/auth/register", json={"email": _email(), "password": PASSWORD}
+        )
+    ).json()
+    headers = {"Authorization": f"Bearer {other['access_token']}"}
+
+    body = (await client.get("/api/v1/notes", headers=headers)).json()
+
+    assert body == []
