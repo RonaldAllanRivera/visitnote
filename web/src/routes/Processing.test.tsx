@@ -20,6 +20,7 @@ type StatusBody = {
 }
 
 const VISIT_ID = '11111111-1111-1111-1111-111111111111'
+const NOTE_ID = '22222222-2222-2222-2222-222222222222'
 
 function statusResponse(overrides: Partial<StatusBody> = {}) {
   return {
@@ -82,6 +83,19 @@ describe('Processing', () => {
     renderProcessing()
 
     expect(await screen.findByText('Note ready')).toBeInTheDocument()
+  })
+
+  it('links to the note once one exists', async () => {
+    // Every existing fixture here leaves note_id null, so this branch -- the whole
+    // reason a nurse would visit this screen -- was previously untested.
+    vi.mocked(api.GET).mockResolvedValue(
+      statusResponse({ status: 'ready', stage: 'complete', note_id: NOTE_ID }),
+    )
+
+    renderProcessing()
+
+    const link = await screen.findByRole('link', { name: /read and correct your note/i })
+    expect(link).toHaveAttribute('href', `/notes/${NOTE_ID}`)
   })
 
   it('shows the recorded reason when processing failed', async () => {
