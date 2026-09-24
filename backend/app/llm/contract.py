@@ -71,6 +71,24 @@ class GeneratedNote(BaseModel):
     flags: list[GeneratedFlag]
 
 
+def validate_sections_structure(
+    sections: dict[str, SectionValue], spec: TemplateSpec
+) -> None:
+    """Check a section map against the template's shape.
+
+    Shared by generation and by the review editor, so the two cannot disagree about
+    what a valid repeating section looks like. Structure only: the banned-phrase rule
+    belongs to `validate_output`, because it governs how the model writes rather than
+    what a human author is allowed to say about their own patient.
+    """
+    _check_keys(
+        actual=set(sections),
+        expected={section.key for section in spec.sections},
+        label="sections",
+    )
+    _check_repeating_sections(sections, spec)
+
+
 def validate_output(payload: dict[str, Any], spec: TemplateSpec) -> GeneratedNote:
     """Validate a generation against the active template, or explain how to fix it."""
     try:
@@ -87,8 +105,7 @@ def validate_output(payload: dict[str, Any], spec: TemplateSpec) -> GeneratedNot
         expected=set(VISIT_DETAIL_KEYS),
         label="visit_details",
     )
-    _check_keys(actual=set(note.sections), expected=set(spec.section_keys), label="sections")
-    _check_repeating_sections(note.sections, spec)
+    validate_sections_structure(note.sections, spec)
     _check_banned_phrases(note.sections)
 
     return note.model_copy(update={"flags": _normalise_flags(note.flags, spec)})

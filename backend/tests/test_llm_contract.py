@@ -8,7 +8,12 @@ output".
 
 import pytest
 
-from app.llm.contract import BANNED_PHRASES, NoteValidationError, validate_output
+from app.llm.contract import (
+    BANNED_PHRASES,
+    NoteValidationError,
+    validate_output,
+    validate_sections_structure,
+)
 from app.llm.templates import TemplateSpec
 from app.models.enums import FlagSeverity, Jurisdiction, NoteFormat
 
@@ -89,6 +94,10 @@ REPEATING_SPEC = TemplateSpec.from_schemas(
     llm_provider="anthropic",
     model_id="test-model",
 )
+
+# Every section `SPEC` declares, and every *flat* section `REPEATING_SPEC` declares.
+_FLAT_KEYS: tuple[str, ...] = ("observations", "handover")
+_REPEATING_FLAT_KEYS: tuple[str, ...] = ("shift_details",)
 
 
 def _payload(**overrides: object) -> dict[str, object]:
@@ -377,3 +386,32 @@ def test_a_repeating_payload_without_banned_phrases_still_validates() -> None:
     entries = note.sections["focus_entries"]
     assert isinstance(entries, list)
     assert len(entries) == 2
+
+
+def test_structure_validation_rejects_an_unknown_section() -> None:
+    with pytest.raises(NoteValidationError) as exc:
+        validate_sections_structure({"invented": "text"}, SPEC)
+
+    assert "invented" in str(exc.value)
+
+
+def test_structure_validation_rejects_an_entry_missing_a_declared_field() -> None:
+    # MISSING_RESPONSE exists to catch an Action with no documented Response. A key
+    # the author never wrote and a response they determined absent must not be
+    # indistinguishable.
+    sections = dict.fromkeys(_REPEATING_FLAT_KEYS, "text")
+    sections["focus_entries"] = [{"focus": "Pain", "data": "7/10", "action": "Gave PRN"}]
+
+    with pytest.raises(NoteValidationError) as exc:
+        validate_sections_structure(sections, REPEATING_SPEC)
+
+    assert "response" in str(exc.value)
+
+
+def test_structure_validation_permits_a_banned_phrase() -> None:
+    # The banned-phrase rule governs how the *model* writes. A nurse typing these
+    # words is the author of a clinical record, and the editor is not a gate on a
+    # clinician's language.
+    sections = dict.fromkeys(_FLAT_KEYS, "routine visit")
+
+    validate_sections_structure(sections, SPEC)
