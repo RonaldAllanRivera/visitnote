@@ -1,7 +1,7 @@
 """Generated notes, their normalized flag rows, and the transcript behind them."""
 
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Boolean, Enum, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -10,6 +10,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, Json, Timestamped, UtcDateTime, UUIDPrimaryKey
 from app.models.enums import FlagSeverity, NoteFormat, ReviewStatus
 from app.models.enums import note_format_column as _format_column
+
+if TYPE_CHECKING:
+    from app.models.note_template import NoteTemplate
 
 
 def _enum(enum_type: type, name: str) -> Enum:
@@ -123,6 +126,7 @@ class Note(UUIDPrimaryKey, Timestamped, Base):
     note_flags: Mapped[list["NoteFlag"]] = relationship(
         back_populates="note", cascade="all, delete-orphan"
     )
+    template: Mapped["NoteTemplate"] = relationship(lazy="raise")
 
     def __repr__(self) -> str:
         return f"<Note {self.id} {self.format} v{self.version}>"

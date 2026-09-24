@@ -306,6 +306,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notes/{note_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Note */
+        get: operations["read_note_api_v1_notes__note_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ops/jobs": {
         parameters: {
             query?: never;
@@ -448,6 +465,11 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /**
+         * FlagSeverity
+         * @enum {string}
+         */
+        FlagSeverity: "info" | "warning" | "critical";
         /** GoogleSignInRequest */
         GoogleSignInRequest: {
             /** Id Token */
@@ -507,11 +529,53 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** NoteFlagRead */
+        NoteFlagRead: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            severity: components["schemas"]["FlagSeverity"];
+        };
         /**
          * NoteFormat
          * @enum {string}
          */
         NoteFormat: "shift_note" | "soapie" | "fdar";
+        /** NoteRead */
+        NoteRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Visit Id
+             * Format: uuid
+             */
+            visit_id: string;
+            format: components["schemas"]["NoteFormat"];
+            /** Version */
+            version: number;
+            /** Edited */
+            edited: boolean;
+            review_status: components["schemas"]["ReviewStatus"];
+            /** Signed At */
+            signed_at: string | null;
+            /** Visit Details */
+            visit_details: {
+                [key: string]: unknown;
+            };
+            /** Sections */
+            sections: {
+                [key: string]: string | {
+                    [key: string]: string | null;
+                }[] | null;
+            };
+            /** Flags */
+            flags: components["schemas"]["NoteFlagRead"][];
+            template: components["schemas"]["TemplateRead"];
+        };
         /**
          * OnboardingRequest
          * @description Partial profile update.
@@ -602,11 +666,46 @@ export interface components {
             refresh_token: string;
         };
         /**
+         * ReviewStatus
+         * @description Where a note sits in an agency's review workflow.
+         *
+         *     Separate from the visit's status: a note can be signed by its author and still
+         *     be waiting on a supervisor, and those are different questions.
+         * @enum {string}
+         */
+        ReviewStatus: "unreviewed" | "needs_correction" | "accepted";
+        /**
          * RoleTitle
          * @description What the user does, which sets their default note format at onboarding.
          * @enum {string}
          */
         RoleTitle: "caregiver" | "hha" | "cna" | "lpn" | "rn" | "other";
+        /** SectionSpecRead */
+        SectionSpecRead: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Order */
+            order: number;
+            /** Description */
+            description: string;
+            /** Repeating */
+            repeating: boolean;
+            /** Fields */
+            fields: components["schemas"]["SectionSpecRead"][];
+        };
+        /** TemplateRead */
+        TemplateRead: {
+            jurisdiction: components["schemas"]["Jurisdiction"];
+            format: components["schemas"]["NoteFormat"];
+            /** Version */
+            version: number;
+            /** Name */
+            name: string;
+            /** Sections */
+            sections: components["schemas"]["SectionSpecRead"][];
+        };
         /** TokenPair */
         TokenPair: {
             /** Access Token */
@@ -1343,6 +1442,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VisitProcessingStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_note_api_v1_notes__note_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteRead"];
                 };
             };
             /** @description Validation Error */

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.llm.contract import GeneratedNote
 from app.llm.templates import TemplateSpec
@@ -70,6 +71,21 @@ class NoteRepository:
     async def get_for_visit(self, visit_id: uuid.UUID) -> Note | None:
         return (
             await self.session.execute(select(Note).where(Note.visit_id == visit_id))
+        ).scalar_one_or_none()
+
+    async def get_for_user(self, note_id: uuid.UUID, user_id: uuid.UUID) -> Note | None:
+        """One note, scoped to its owner.
+
+        Scoping here rather than in the handler is what keeps a new route from
+        forgetting it. A note belonging to someone else is indistinguishable from one
+        that does not exist.
+        """
+        return (
+            await self.session.execute(
+                select(Note)
+                .where(Note.id == note_id, Note.user_id == user_id)
+                .options(selectinload(Note.template))
+            )
         ).scalar_one_or_none()
 
 

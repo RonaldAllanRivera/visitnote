@@ -6,10 +6,12 @@ constraints, TIMESTAMPTZ behaviour across a DST boundary -- either does not exis
 behaves differently in SQLite.
 """
 
+import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -18,7 +20,12 @@ from app.core.db import engine
 from app.core.queue import get_job_queue
 from app.core.redis import pool
 from app.jobs.queue import FakeJobQueue
+from app.llm.contract import GeneratedFlag, GeneratedNote
+from app.llm.templates import TemplateSpec
 from app.main import create_app
+from app.models import Client, Note, NoteTemplate, Visit
+from app.models.enums import CaptureMode, FlagSeverity, Jurisdiction, NoteFormat, VisitStatus
+from app.repositories.notes import NoteRepository
 from app.storage import FakeStorageProvider, get_storage_provider
 
 # The app under test runs the real TrustedHostMiddleware, so requests must carry a
@@ -97,3 +104,109 @@ async def client() -> AsyncGenerator[AsyncClient]:
         app.router.lifespan_context(app),
     ):
         yield ac
+
+
+@pytest.fixture
+async def note_fixture(
+    client: AsyncClient, session: AsyncSession
+) -> tuple[Note, dict[str, str]]:
+    """A US shift note owned by a registered user, with the headers to read it.
+
+    Written through the repository rather than the pipeline: this fixture exists to
+    exercise the review API, and routing it through transcription and generation
+    would make every one of those tests depend on a provider.
+    """
+    return await _note_for_new_user(client, session)
+
+
+@pytest.fixture
+async def two_notes_fixture(
+    client: AsyncClient, session: AsyncSession
+) -> tuple[tuple[Note, Note], dict[str, str]]:
+    """Two notes for one user, older first."""
+    older, headers = await _note_for_new_user(client, session)
+    newer, _ = await _note_for_new_user(client, session, headers=headers)
+    return (older, newer), headers
+
+
+async def _note_for_new_user(
+    client: AsyncClient,
+    session: AsyncSession,
+    headers: dict[str, str] | None = None,
+) -> tuple[Note, dict[str, str]]:
+    if headers is None:
+        registered = (
+            await client.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": f"{uuid.uuid4().hex}@visitnote-testing.com",
+                    "password": "a-sufficiently-long-password",
+                },
+            )
+        ).json()
+        headers = {"Authorization": f"Bearer {registered['access_token']}"}
+
+    profile = (await client.get("/api/v1/auth/me", headers=headers)).json()
+    user_id = uuid.UUID(profile["id"])
+
+    care_recipient = Client(owner_id=user_id, label="Mrs R")
+    session.add(care_recipient)
+    await session.flush()
+
+    visit = Visit(
+        user_id=user_id,
+        client_id=care_recipient.id,
+        jurisdiction=Jurisdiction.US,
+        note_format=NoteFormat.SHIFT_NOTE,
+        capture_mode=CaptureMode.SPOKEN_RECAP,
+        status=VisitStatus.PROCESSING,
+        timezone="America/Los_Angeles",
+        idempotency_key=uuid.uuid4().hex,
+    )
+    session.add(visit)
+    await session.commit()
+    await session.refresh(visit)
+
+    # Filtered on jurisdiction as well as format: once the PH rows exist, filtering
+    # on format alone raises MultipleResultsFound instead of picking a row.
+    template = (
+        await session.execute(
+            select(NoteTemplate).where(
+                NoteTemplate.jurisdiction == Jurisdiction.US,
+                NoteTemplate.format == NoteFormat.SHIFT_NOTE,
+                NoteTemplate.is_active.is_(True),
+            )
+        )
+    ).scalars().first()
+    assert template is not None
+
+    spec = TemplateSpec.from_template(template)
+    # Every section key the template declares, not just the two this fixture cares
+    # about: the read endpoint promises the note's sections match the template's
+    # schema exactly, and a partial payload here would make that promise untestable.
+    sections: dict[str, str | None] = dict.fromkeys(spec.section_keys)
+    if "observations" in sections:
+        sections["observations"] = "Ate half of lunch."
+
+    note = await NoteRepository(session).create_for_visit(
+        visit=visit,
+        spec=spec,
+        generated=GeneratedNote(
+            visit_details={
+                "client_label": "Mrs R",
+                "visit_date": "2026-09-21",
+                "start_time": "08:00",
+                "end_time": None,
+            },
+            sections=sections,
+            flags=[
+                GeneratedFlag(
+                    code="MISSING_SHIFT_TIMES",
+                    message="No end time was stated.",
+                    severity=FlagSeverity.CRITICAL,
+                )
+            ],
+        ),
+        template_id=template.id,
+    )
+    return note, headers
