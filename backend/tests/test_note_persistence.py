@@ -23,6 +23,7 @@ from app.models.enums import (
     ReviewStatus,
     VisitStatus,
 )
+from app.repositories.note_templates import NoteTemplateRepository
 from app.repositories.notes import NoteRepository
 
 
@@ -51,11 +52,15 @@ async def _visit(session: AsyncSession) -> Visit:
     return visit
 
 
-async def _spec(session: AsyncSession) -> TemplateSpec:
+async def _spec(session: AsyncSession) -> tuple[TemplateSpec, uuid.UUID]:
     # Jurisdiction-aware for the same reason NoteTemplateRepository.get_active is:
     # once a PH row exists for this format, `.scalar_one()` filtered on format alone
     # raises MultipleResultsFound instead of picking a row. These fixtures are all
     # US-format notes.
+    #
+    # Returns the row's id alongside the spec: `create_for_visit` now takes
+    # `template_id` explicitly (see `TemplateSpec.from_template`'s docstring on why
+    # the id does not live on the spec itself), and every caller here needs both.
     template = (
         await session.execute(
             select(NoteTemplate).where(
@@ -64,7 +69,7 @@ async def _spec(session: AsyncSession) -> TemplateSpec:
             )
         )
     ).scalar_one()
-    return TemplateSpec.from_template(template)
+    return TemplateSpec.from_template(template), template.id
 
 
 def _generated() -> GeneratedNote:
@@ -94,9 +99,9 @@ def _generated() -> GeneratedNote:
 @pytest.fixture
 async def persisted(session: AsyncSession) -> tuple[Note, Visit]:
     visit = await _visit(session)
-    spec = await _spec(session)
+    spec, template_id = await _spec(session)
     note = await NoteRepository(session).create_for_visit(
-        visit=visit, spec=spec, generated=_generated()
+        visit=visit, spec=spec, generated=_generated(), template_id=template_id
     )
     return note, visit
 
@@ -158,7 +163,7 @@ async def test_the_note_records_what_generated_it(
 ) -> None:
     """Provenance: any note must be traceable to an exact prompt, provider and model."""
     note, _ = persisted
-    spec = await _spec(session)
+    spec, _ = await _spec(session)
 
     assert (note.prompt_version, note.llm_provider, note.model_id) == (
         spec.prompt_version,
@@ -170,11 +175,11 @@ async def test_the_note_records_what_generated_it(
 async def test_a_note_with_no_flags_writes_no_flag_rows(session: AsyncSession) -> None:
     """A clean note is a real outcome, not an empty edge case to hedge around."""
     visit = await _visit(session)
-    spec = await _spec(session)
+    spec, template_id = await _spec(session)
     generated = _generated().model_copy(update={"flags": []})
 
     note = await NoteRepository(session).create_for_visit(
-        visit=visit, spec=spec, generated=generated
+        visit=visit, spec=spec, generated=generated, template_id=template_id
     )
 
     rows = (
@@ -184,3 +189,24 @@ async def test_a_note_with_no_flags_writes_no_flag_rows(session: AsyncSession) -
     )
     assert note.flags == []
     assert rows == []
+
+
+async def test_the_note_records_the_template_that_produced_it(
+    session: AsyncSession,
+) -> None:
+    # Resolving the template at read time would render an old note against a newer
+    # template's section_schema the day a second version is seeded.
+    visit = await _visit(session)
+    template = await NoteTemplateRepository(session).get_active(
+        visit.jurisdiction, visit.note_format
+    )
+    assert template is not None
+
+    note = await NoteRepository(session).create_for_visit(
+        visit=visit,
+        spec=TemplateSpec.from_template(template),
+        generated=_generated(),
+        template_id=template.id,
+    )
+
+    assert note.note_template_id == template.id

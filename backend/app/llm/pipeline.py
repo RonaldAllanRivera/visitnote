@@ -27,7 +27,7 @@ from app.llm.costs import compute_cost
 from app.llm.prompts import get_prompt, infer_recording_speaker, render_transcript
 from app.llm.providers import LLMOutputError, LLMProvider, LLMUsage
 from app.llm.templates import TemplateSpec, json_schema_for
-from app.models import ProcessingJob, Visit
+from app.models import NoteTemplate, ProcessingJob, Visit
 from app.models.enums import JobStage, VisitStatus
 from app.observability import NoOpTracer, Tracer
 from app.repositories.jobs import ProcessingJobRepository
@@ -116,7 +116,8 @@ class Pipeline:
         jobs: ProcessingJobRepository,
         trace_id: str,
     ) -> ProcessingJob:
-        spec = await self._template(visit)
+        template = await self._template(visit)
+        spec = TemplateSpec.from_template(template)
 
         # A scratch directory per run, removed on the way out whatever happens. The
         # worker's only disk usage, and it must not survive a failure -- an orphaned
@@ -144,7 +145,7 @@ class Pipeline:
 
         with self.tracer.span("persist", trace_id=trace_id, visit_id=str(visit.id)):
             await NoteRepository(self.session).create_for_visit(
-                visit=visit, spec=spec, generated=generated
+                visit=visit, spec=spec, generated=generated, template_id=template.id
             )
 
         settings = get_settings()
@@ -170,7 +171,7 @@ class Pipeline:
 
     # -- stages ------------------------------------------------------------
 
-    async def _template(self, visit: Visit) -> TemplateSpec:
+    async def _template(self, visit: Visit) -> NoteTemplate:
         # Read the visit's jurisdiction, never the user's: the visit is the historical
         # fact, and a user who changed jurisdiction must not re-resolve the template
         # for work already captured.
@@ -183,7 +184,7 @@ class Pipeline:
                 stage=JobStage.GENERATE,
                 retryable=False,
             )
-        return TemplateSpec.from_template(template)
+        return template
 
     async def _download(self, visit: Visit, destination: Path, *, trace_id: str) -> None:
         assert visit.audio_key is not None  # guarded in run()

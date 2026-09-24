@@ -23,7 +23,12 @@ class NoteRepository:
     session: AsyncSession
 
     async def create_for_visit(
-        self, *, visit: Visit, spec: TemplateSpec, generated: GeneratedNote
+        self,
+        *,
+        visit: Visit,
+        spec: TemplateSpec,
+        generated: GeneratedNote,
+        template_id: uuid.UUID,
     ) -> Note:
         """Write the note and its flag rows together.
 
@@ -35,6 +40,7 @@ class NoteRepository:
             visit_id=visit.id,
             user_id=visit.user_id,
             format=spec.format,
+            note_template_id=template_id,
             visit_details=dict(generated.visit_details),
             sections=dict(generated.sections),
             flags=[flag.model_dump(mode="json") for flag in generated.flags],

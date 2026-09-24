@@ -72,6 +72,18 @@ class Note(UUIDPrimaryKey, Timestamped, Base):
     # validity is established by having a row in note_templates -- not by the column type.
     format: Mapped[NoteFormat] = mapped_column(_format_column(), nullable=False)
 
+    # The exact template row this note was generated from, not whichever row is
+    # active when someone opens it. Templates are versioned and promotion inserts a
+    # new row rather than rewriting the old one, so this pointer keeps meaning what
+    # it meant on the day the note was written -- which is what lets the editor
+    # render an old note against the schema that actually shaped its sections.
+    note_template_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("note_templates.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
     # The structured header: label, date, and the exact times. Separate from
     # `sections` because it is the part that gets checked rather than read -- the
     # missing-times flags are decided from these fields, not by parsing prose.
