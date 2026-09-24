@@ -8,8 +8,10 @@ which only one of them exists.
 
 import uuid
 from dataclasses import dataclass
+from typing import Any, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -88,6 +90,47 @@ class NoteRepository:
                 .options(selectinload(Note.template))
             )
         ).scalar_one_or_none()
+
+    async def update_if_current(
+        self,
+        *,
+        note: Note,
+        expected_version: int,
+        visit_details: dict[str, Any] | None,
+        sections: dict[str, Any] | None,
+    ) -> bool:
+        """Apply an edit only if nobody has written since the client read.
+
+        The check is a WHERE clause on the UPDATE rather than a read-then-write, so
+        two concurrent saves cannot both pass the comparison before either commits.
+        """
+        values: dict[str, Any] = {
+            "version": Note.version + 1,
+            "edited": True,
+        }
+        if visit_details is not None:
+            values["visit_details"] = visit_details
+        if sections is not None:
+            values["sections"] = sections
+
+        result = cast(
+            "CursorResult[Any]",
+            await self.session.execute(
+                update(Note)
+                .where(Note.id == note.id, Note.version == expected_version)
+                .values(**values)
+            ),
+        )
+        await self.session.commit()
+        applied = result.rowcount == 1
+        if applied:
+            # The bulk UPDATE above is Core-level and does not touch the session's
+            # identity map, so `note` still holds its pre-update version and
+            # sections. expire_on_commit=False means nothing else will refresh it
+            # either -- without this, the caller would serialise stale data even
+            # though the database now holds the new row.
+            await self.session.refresh(note)
+        return applied
 
     async def recent_for_user(self, user_id: uuid.UUID, limit: int = 50) -> list[Note]:
         """The user's most recent notes.

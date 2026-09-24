@@ -337,7 +337,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Note */
+        patch: operations["update_note_api_v1_notes__note_id__patch"];
         trace?: never;
     };
     "/api/v1/ops/jobs": {
@@ -618,6 +619,29 @@ export interface components {
             /** Flags */
             flags: components["schemas"]["NoteFlagRead"][];
             template: components["schemas"]["TemplateRead"];
+        };
+        /**
+         * NoteUpdate
+         * @description A correction to a generated note.
+         *
+         *     `extra="forbid"` is a security control rather than tidiness: version, edited,
+         *     review_status, signed_at, format and the provenance fields are not the client's
+         *     to set, and rejecting unknown fields makes a future column client-writable by
+         *     accident impossible to write.
+         */
+        NoteUpdate: {
+            /** Version */
+            version: number;
+            /** Visit Details */
+            visit_details?: {
+                [key: string]: unknown;
+            } | null;
+            /** Sections */
+            sections?: {
+                [key: string]: string | {
+                    [key: string]: string | null;
+                }[] | null;
+            } | null;
         };
         /**
          * OnboardingRequest
@@ -1528,6 +1552,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_note_api_v1_notes__note_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteUpdate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

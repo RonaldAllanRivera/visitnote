@@ -58,6 +58,24 @@ class NoteRead(BaseModel):
     template: TemplateRead
 
 
+class NoteUpdate(BaseModel):
+    """A correction to a generated note.
+
+    `extra="forbid"` is a security control rather than tidiness: version, edited,
+    review_status, signed_at, format and the provenance fields are not the client's
+    to set, and rejecting unknown fields makes a future column client-writable by
+    accident impossible to write.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # The version the client loaded. A mismatch means someone else has written since,
+    # and the edit is refused rather than applied on top of work it never saw.
+    version: int
+    visit_details: dict[str, Any] | None = None
+    sections: dict[str, SectionValue] | None = None
+
+
 class NoteListItem(BaseModel):
     id: uuid.UUID
     visit_id: uuid.UUID
