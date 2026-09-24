@@ -31,9 +31,13 @@ export const queryKeys = {
   // One entry, not keyed by user: the token identifies who is asking, and a sign-out
   // clears the cache, so a second user's profile can never be read from the first's key.
   profile: () => ['profile'] as const,
-  notes: () => ['notes'] as const,
-  // Nested under the collection key so invalidating ['notes'] after a save also
-  // refreshes the list's flag counts and edited markers.
+  // Given its own 'list' segment, distinct from note(id) below, precisely so that
+  // neither key is a prefix of the other. invalidateQueries defaults to prefix
+  // matching, and ['notes'] is a prefix of ['notes', noteId]: sharing that root would
+  // mean invalidating the list after a save also invalidates every open note's own
+  // query, forcing a background refetch underneath an editor whose staleTime:
+  // Infinity exists specifically to prevent that.
+  notes: () => ['notes', 'list'] as const,
   note: (noteId: string) => ['notes', noteId] as const,
   // Keyed by visit so two capture screens open at once poll independently, and so
   // the review screen can invalidate exactly one visit's status once it lands.
