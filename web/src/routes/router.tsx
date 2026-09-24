@@ -4,6 +4,7 @@ import { AppLayout } from '@/components/AppLayout'
 import { Landing } from '@/routes/Landing'
 import { NewVisit } from '@/routes/NewVisit'
 import { NoteEditor } from '@/routes/NoteEditor'
+import { Notes } from '@/routes/Notes'
 import { Onboarding } from '@/routes/Onboarding'
 import { Processing } from '@/routes/Processing'
 import { RequireAuth } from '@/routes/RequireAuth'
@@ -40,6 +41,7 @@ export const router = createBrowserRouter([
             children: [
               { path: 'new', element: <NewVisit /> },
               { path: 'visits/:visitId/processing', element: <Processing /> },
+              { path: 'notes', element: <Notes /> },
               { path: 'notes/:noteId', element: <NoteEditor /> },
               // Gated too: onboarding asks the question once, and this is where it
               // gets answered again. Someone who has never answered belongs there,

@@ -23,6 +23,7 @@ export function AppLayout() {
         <nav className="flex gap-4 text-sm">
           <NavLink to="/" end className={linkClass}>Overview</NavLink>
           <NavLink to="/new" className={linkClass}>New note</NavLink>
+          <NavLink to="/notes" className={linkClass}>Notes</NavLink>
           <NavLink to="/settings" className={linkClass}>Settings</NavLink>
           <NavLink to="/status" className={linkClass}>Status</NavLink>
           <NavLink to="/sign-in" className={linkClass}>Sign in</NavLink>
