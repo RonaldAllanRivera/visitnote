@@ -31,6 +31,10 @@ export const queryKeys = {
   // One entry, not keyed by user: the token identifies who is asking, and a sign-out
   // clears the cache, so a second user's profile can never be read from the first's key.
   profile: () => ['profile'] as const,
+  notes: () => ['notes'] as const,
+  // Nested under the collection key so invalidating ['notes'] after a save also
+  // refreshes the list's flag counts and edited markers.
+  note: (noteId: string) => ['notes', noteId] as const,
   // Keyed by visit so two capture screens open at once poll independently, and so
   // the review screen can invalidate exactly one visit's status once it lands.
   visitStatus: (visitId: string) => ['visits', visitId, 'status'] as const,
