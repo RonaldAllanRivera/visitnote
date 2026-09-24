@@ -85,14 +85,17 @@ class NoteService:
             sections=payload.sections,
         )
         if not applied:
-            fresh = await notes.get_for_user(note_id, user.id)
-            assert fresh is not None  # it existed a moment ago and nothing deletes notes here
-            raise StaleNoteVersionError(fresh.version)
+            # `update_if_current` refreshes `note` whether or not it applied, so
+            # `note.version` here is what the database actually holds -- not a
+            # second query, which would only hand back this same identity-mapped,
+            # still-stale object (and, before the repository refreshed on failure
+            # too, could even report a version nobody ever committed).
+            raise StaleNoteVersionError(note.version)
 
-        # `notes.update_if_current` refreshed `note` in place after its bulk UPDATE,
-        # since the session's identity map is not otherwise notified of a Core-level
-        # write. Serialising that same object -- rather than re-reading -- is what
-        # keeps the response in sync with what the database now holds.
+        # Same object, refreshed by `update_if_current` after its bulk UPDATE, since
+        # the session's identity map is not otherwise notified of a Core-level
+        # write. Serialising it -- rather than re-reading -- is what keeps the
+        # response in sync with what the database now holds.
         return self._read(note)
 
     async def list(self, user: User) -> list[NoteListItem]:

@@ -118,18 +118,27 @@ class NoteRepository:
             await self.session.execute(
                 update(Note)
                 .where(Note.id == note.id, Note.version == expected_version)
-                .values(**values)
+                .values(**values),
+                # The ORM's default "evaluate" strategy checks the WHERE clause
+                # against the *in-memory* object's own attributes, not against what
+                # the UPDATE actually matched in the database. When `note` was
+                # loaded before a concurrent writer moved the row on, its in-memory
+                # version can still equal `expected_version` even though the row no
+                # longer does -- so "evaluate" would silently bump `note.version` in
+                # place on a failed, zero-row UPDATE. Turning synchronization off
+                # makes the explicit refresh below the only source of truth.
+                execution_options={"synchronize_session": False},
             ),
         )
         await self.session.commit()
         applied = result.rowcount == 1
-        if applied:
-            # The bulk UPDATE above is Core-level and does not touch the session's
-            # identity map, so `note` still holds its pre-update version and
-            # sections. expire_on_commit=False means nothing else will refresh it
-            # either -- without this, the caller would serialise stale data even
-            # though the database now holds the new row.
-            await self.session.refresh(note)
+        # The bulk UPDATE above is Core-level and, with synchronize_session=False,
+        # never touches the session's identity map either way -- `note` still holds
+        # whatever it held before this call. Refresh it regardless of outcome:
+        # on success that is the new version and sections; on failure it is the
+        # version and content someone else actually committed, which is what a 409
+        # built from this object needs to report.
+        await self.session.refresh(note)
         return applied
 
     async def recent_for_user(self, user_id: uuid.UUID, limit: int = 50) -> list[Note]:
