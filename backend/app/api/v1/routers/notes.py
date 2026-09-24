@@ -5,7 +5,13 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import CurrentUser, SessionDep
-from app.schemas.note import NoteListItem, NoteRead, NoteUpdate
+from app.schemas.note import (
+    NoteConflictResponse,
+    NoteListItem,
+    NoteNotFoundResponse,
+    NoteRead,
+    NoteUpdate,
+)
 from app.services.notes import (
     NoteNotFoundError,
     NoteService,
@@ -31,7 +37,25 @@ async def read_note(note_id: uuid.UUID, user: CurrentUser, session: SessionDep) 
         raise _NOT_FOUND from exc
 
 
-@router.patch("/{note_id}", response_model=NoteRead)
+@router.patch(
+    "/{note_id}",
+    response_model=NoteRead,
+    responses={
+        # Declared so these reach the generated client types (see health.py for the
+        # same pattern). Without it, openapi-typescript has nothing to type the error
+        # branch from, and a malformed-body fallback in the client reads as real data
+        # instead of the absence of it -- which is exactly what happened to a 409's
+        # missing `current_version`.
+        status.HTTP_404_NOT_FOUND: {
+            "model": NoteNotFoundResponse,
+            "description": "No such note, or it belongs to someone else.",
+        },
+        status.HTTP_409_CONFLICT: {
+            "model": NoteConflictResponse,
+            "description": "Someone else has written to this note since it was loaded.",
+        },
+    },
+)
 async def update_note(
     note_id: uuid.UUID, payload: NoteUpdate, user: CurrentUser, session: SessionDep
 ) -> NoteRead:

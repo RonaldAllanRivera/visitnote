@@ -72,8 +72,37 @@ class NoteUpdate(BaseModel):
     # The version the client loaded. A mismatch means someone else has written since,
     # and the edit is refused rather than applied on top of work it never saw.
     version: int
-    visit_details: dict[str, Any] | None = None
+    # Typed to the shape generation itself produces (str | None per key), not `Any`.
+    # `Any` let a client PATCH a non-string value straight into a column that
+    # `NoteListItem` later reads as `str | None` -- every subsequent `GET /notes` for
+    # that user then raised inside the service. The key set itself is checked in
+    # `NoteService.update`, against the same `VISIT_DETAIL_KEYS` generation enforces.
+    visit_details: dict[str, str | None] | None = None
     sections: dict[str, SectionValue] | None = None
+
+
+class NoteConflictDetail(BaseModel):
+    """The body of a 409 from `PATCH /notes/{note_id}`: what actually happened."""
+
+    message: str
+    current_version: int
+
+
+class NoteConflictResponse(BaseModel):
+    """Declared on the route purely so the 409 reaches the generated client types.
+
+    Without this, openapi-typescript has nothing to type that branch from, and the
+    web client is left guessing at the shape of `error.detail` -- which is exactly
+    how a malformed-body fallback (`currentVersion: 0`) read as a real version.
+    """
+
+    detail: NoteConflictDetail
+
+
+class NoteNotFoundResponse(BaseModel):
+    """The body of a 404 from a note route: no such note, or it belongs to someone else."""
+
+    detail: str
 
 
 class NoteListItem(BaseModel):

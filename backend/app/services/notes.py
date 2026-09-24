@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.llm.contract import NoteValidationError, validate_sections_structure
-from app.llm.templates import SectionSpec, TemplateSpec
+from app.llm.contract import NoteValidationError, _check_keys, validate_sections_structure
+from app.llm.templates import VISIT_DETAIL_KEYS, SectionSpec, TemplateSpec
 from app.models import Note, User
 from app.repositories.notes import NoteRepository
 from app.schemas.note import (
@@ -69,6 +69,21 @@ class NoteService:
         if note is None:
             raise NoteNotFoundError
 
+        if payload.visit_details is not None:
+            try:
+                # Same check generation runs on the model's output (app.llm.contract
+                # .validate_output), against the same key set. Nothing else enforced
+                # this on the edit path: a wrong key set here used to write straight
+                # through, and NoteListItem reading `client_label`/`visit_date` back
+                # out of it is what turned that into a 500 on every later list read.
+                _check_keys(
+                    actual=set(payload.visit_details),
+                    expected=set(VISIT_DETAIL_KEYS),
+                    label="visit_details",
+                )
+            except NoteValidationError as exc:
+                raise NoteStructureError(str(exc)) from exc
+
         if payload.sections is not None:
             spec = TemplateSpec.from_template(note.template)
             try:
@@ -77,6 +92,19 @@ class NoteService:
                 validate_sections_structure(payload.sections, spec)
             except NoteValidationError as exc:
                 raise NoteStructureError(str(exc)) from exc
+
+        # Compare only the fields the payload actually carries -- an omitted field is
+        # not a claim that it changed. When nothing carried did change, skip the
+        # write entirely rather than bumping `version`/`edited` on a no-op: that false
+        # bump was reachable from "open a note, change nothing, click Save," and its
+        # consequence is a concurrent reader's *real* save later colliding with a 409
+        # caused by nothing having happened.
+        sections_unchanged = payload.sections is None or payload.sections == note.sections
+        visit_details_unchanged = (
+            payload.visit_details is None or payload.visit_details == note.visit_details
+        )
+        if sections_unchanged and visit_details_unchanged:
+            return self._read(note)
 
         applied = await notes.update_if_current(
             note=note,

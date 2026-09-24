@@ -48,16 +48,22 @@ async def test_a_stale_version_is_refused(client: AsyncClient, note_fixture) -> 
     note, headers = note_fixture
     body = await _sections(client, note.id, headers)
     stale = body["version"]
+    first_key = body["template"]["sections"][0]["key"]
+    # Genuine, distinct edits: an unchanged save is a no-op (Finding 2) and would not
+    # bump the version at all, which would make this test pass for the wrong reason.
+    sections = dict(body["sections"])
+    sections[first_key] = "First edit."
     await client.patch(
         f"/api/v1/notes/{note.id}",
         headers=headers,
-        json={"version": stale, "sections": body["sections"]},
+        json={"version": stale, "sections": sections},
     )
 
+    sections[first_key] = "Second edit, still against the stale version."
     response = await client.patch(
         f"/api/v1/notes/{note.id}",
         headers=headers,
-        json={"version": stale, "sections": body["sections"]},
+        json={"version": stale, "sections": sections},
     )
 
     assert response.status_code == 409
@@ -196,3 +202,109 @@ async def test_editing_another_users_note_is_not_found(
     )
 
     assert response.status_code == 404
+
+
+async def test_visit_details_with_a_wrong_key_is_rejected(
+    client: AsyncClient, note_fixture
+) -> None:
+    """Finding 1: the edit path never enforced VISIT_DETAIL_KEYS the way generation does.
+
+    A payload missing a required key (or carrying one the template does not declare)
+    must be refused the same way an unknown section key is, rather than silently
+    written -- which is what let a later `GET /notes` 500 permanently for the owner.
+    """
+    note, headers = note_fixture
+    body = await _sections(client, note.id, headers)
+
+    response = await client.patch(
+        f"/api/v1/notes/{note.id}",
+        headers=headers,
+        json={
+            "version": body["version"],
+            # Missing visit_date, start_time, end_time -- exactly the shape
+            # `_check_keys` rejects for a generation, and must reject here too.
+            "visit_details": {"client_label": "Bed 12"},
+        },
+    )
+
+    assert response.status_code == 422
+    assert "visit_details" in str(response.json()["detail"])
+
+    after = await _sections(client, note.id, headers)
+    assert after["visit_details"] == body["visit_details"]
+
+
+async def test_visit_details_with_a_wrong_value_type_is_rejected(
+    client: AsyncClient, note_fixture
+) -> None:
+    """Finding 1's milder, structurally-typed case: a value that is not a string.
+
+    The schema itself (`dict[str, str | None]`) is what rejects this -- there is no
+    service-level check to exercise, only the request body failing validation before
+    it ever reaches `NoteService.update`.
+    """
+    note, headers = note_fixture
+    body = await _sections(client, note.id, headers)
+    visit_details = dict(body["visit_details"])
+    visit_details["client_label"] = {"nested": "not a string"}
+
+    response = await client.patch(
+        f"/api/v1/notes/{note.id}",
+        headers=headers,
+        json={"version": body["version"], "visit_details": visit_details},
+    )
+
+    assert response.status_code == 422
+
+    after = await _sections(client, note.id, headers)
+    assert after["visit_details"] == body["visit_details"]
+
+
+async def test_saving_an_unchanged_note_twice_leaves_the_version_alone(
+    client: AsyncClient, note_fixture
+) -> None:
+    """Finding 2: opening a note and clicking Save without changing anything must not
+    bump `version` or `edited` -- that false bump is what makes a concurrent reader's
+    own, real save collide with a 409 caused by a non-event.
+    """
+    note, headers = note_fixture
+    body = await _sections(client, note.id, headers)
+    payload = {
+        "version": body["version"],
+        "sections": body["sections"],
+        "visit_details": body["visit_details"],
+    }
+
+    first = await client.patch(f"/api/v1/notes/{note.id}", headers=headers, json=payload)
+    assert first.status_code == 200
+    assert first.json()["version"] == body["version"]
+    assert first.json()["edited"] is False
+
+    second = await client.patch(f"/api/v1/notes/{note.id}", headers=headers, json=payload)
+    assert second.status_code == 200
+    assert second.json()["version"] == body["version"]
+    assert second.json()["edited"] is False
+
+
+async def test_a_payload_omitting_sections_is_not_treated_as_changing_it(
+    client: AsyncClient, note_fixture
+) -> None:
+    """Comparing only the fields the payload actually carries.
+
+    A payload that changes visit_details but omits sections entirely must not be
+    treated as if it cleared or changed sections -- and, since that leaves nothing
+    that actually changed here, must not bump the version either.
+    """
+    note, headers = note_fixture
+    body = await _sections(client, note.id, headers)
+
+    response = await client.patch(
+        f"/api/v1/notes/{note.id}",
+        headers=headers,
+        json={"version": body["version"], "visit_details": body["visit_details"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["version"] == body["version"]
+    assert response.json()["edited"] is False
+    assert response.json()["sections"] == body["sections"]
