@@ -35,7 +35,9 @@ describe('RepeatingSection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /add focus entry/i }))
 
-    expect(onChange).toHaveBeenCalledWith([...ENTRIES, { focus: '', response: '' }])
+    // Null, not "": an untouched field in a new entry is absent, the same fact a
+    // cleared field records, and the missing-field checks test for `is None`.
+    expect(onChange).toHaveBeenCalledWith([...ENTRIES, { focus: null, response: null }])
   })
 
   it('stores an all-whitespace edit as null, not as an empty string', () => {

@@ -9,9 +9,10 @@ type Entry = Record<string, string | null>
  * Generic over the schema rather than written for FDAR: a section is repeating
  * because its template row says `repeating: true`, and a future format that repeats
  * something else needs no code here. An added entry carries every declared field as
- * an empty string rather than omitting them, because the server rejects an entry
- * whose keys do not match the schema exactly -- a missing key and a field the author
- * left blank are different facts.
+ * null rather than omitting them, because the server rejects an entry whose keys do
+ * not match the schema exactly -- a missing key and a field the author left blank are
+ * different facts. Null rather than "" because that is how a blank field is stored
+ * everywhere else, and the missing-field checks test for `is None`.
  */
 export function RepeatingSection({
   section,
@@ -23,7 +24,7 @@ export function RepeatingSection({
   onChange: (next: Entry[]) => void
 }) {
   const blank = (): Entry =>
-    Object.fromEntries(section.fields.map((field) => [field.key, '']))
+    Object.fromEntries(section.fields.map((field) => [field.key, null]))
 
   const updateEntry = (index: number, key: string, value: string) => {
     onChange(
